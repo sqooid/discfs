@@ -30,9 +30,7 @@
           {
             default = pkgs.mkShell {
               buildInputs = with pkgs; [
-                cargo
-                rustc
-
+                rustup
               ];
             };
           }

@@ -1,5 +1,6 @@
 use std::{env, str::FromStr};
 
+use log::info;
 use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions, Pool, Sqlite, SqlitePool};
 
 use super::error::DbError;
@@ -15,13 +16,65 @@ impl FsDatabase {
             .map_err(|e| DbError::ConnectionError(e.to_string()))?
             .create_if_missing(true);
 
-        return Ok(Self {
-            connection: SqlitePool::connect_with(connection_options)
-                .await
-                .map_err(|e| DbError::ConnectionError(e.to_string()))?,
-        });
+        let connection = SqlitePool::connect_with(connection_options)
+            .await
+            .map_err(|e| DbError::ConnectionError(e.to_string()))?;
+
+        {
+            let initialized =
+                sqlx::query!("select name from sqlite_master where type='table' and name='files'")
+                    .fetch_all(&connection)
+                    .await;
+            match initialized {
+                Ok(r) => {
+                    if r.len() == 0 {
+                        Self::initialise_db(&connection).await?;
+                    }
+                }
+                Err(_) => Self::initialise_db(&connection).await?,
+            };
+        }
+
+        return Ok(Self { connection });
+    }
+
+    async fn initialise_db(connection: &Pool<Sqlite>) -> Result<(), DbError> {
+        info!("initializing database for the first time");
+        let _ = sqlx::query(
+            "
+create table files (
+    id integer primary key,
+    name text,
+    ctime integer,
+    atime integer,
+    directory_id integer not null,
+    foreign key(directory_id) references directories(id)
+); 
+
+create table directories (
+    id integer primary key,
+    name text,
+    parent_id integer
+);
+            ",
+        )
+        .execute(connection)
+        .await
+        .map_err(|e| DbError::QueryError(e))?;
+        let _ = sqlx::query!(
+            "
+insert into directories (name, parent_id) values (null, null);
+            ",
+        )
+        .execute(connection)
+        .await
+        .map_err(|e| DbError::QueryError(e))?;
+
+        Ok(())
     }
 }
+
+pub struct DbFile {}
 
 #[cfg(test)]
 mod tests {

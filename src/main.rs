@@ -5,6 +5,7 @@ use std::error::Error;
 
 use fuser::MountOption;
 use local::{db::FsDatabase, fuse::DiscFs};
+use log::info;
 
 // #[tokio::main]
 // async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +19,9 @@ use local::{db::FsDatabase, fuse::DiscFs};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+    info!("starting up");
+
     let fs_database = FsDatabase::new().await?;
     let fs = DiscFs::new(fs_database);
     let mount_options = [

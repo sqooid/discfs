@@ -29,7 +29,11 @@
           in
           {
             default = pkgs.mkShell {
-              buildInputs = with pkgs; [ cargo ];
+              buildInputs = with pkgs; [
+                cargo
+                rustc
+
+              ];
             };
           }
         );

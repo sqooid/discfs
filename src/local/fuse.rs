@@ -1,6 +1,17 @@
 use fuser::Filesystem;
+use libc::ENOENT;
 
-pub struct DiscFs;
+use super::db::FsDatabase;
+
+pub struct DiscFs {
+    db: FsDatabase,
+}
+
+impl DiscFs {
+    pub fn new(db: FsDatabase) -> Self {
+        Self { db }
+    }
+}
 
 impl Filesystem for DiscFs {
     fn destroy(&mut self) {}
@@ -16,6 +27,7 @@ impl Filesystem for DiscFs {
             "[Not Implemented] lookup(parent: {:#x?}, name {:?})",
             parent, name
         );
+        reply.error(ENOENT);
     }
 
     fn forget(&mut self, _req: &fuser::Request<'_>, _ino: u64, _nlookup: u64) {}

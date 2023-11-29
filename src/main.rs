@@ -1,8 +1,10 @@
 pub mod client;
 pub mod local;
 
+use std::error::Error;
+
 use fuser::MountOption;
-use local::fuse::DiscFs;
+use local::{db::FsDatabase, fuse::DiscFs};
 
 // #[tokio::main]
 // async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,8 +16,10 @@ use local::fuse::DiscFs;
 //     Ok(())
 // }
 
-fn main() {
-    let fs = DiscFs {};
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let fs_database = FsDatabase::new().await?;
+    let fs = DiscFs::new(fs_database);
     let mount_options = [
         MountOption::NoDev,
         MountOption::NoSuid,
@@ -23,5 +27,7 @@ fn main() {
         MountOption::AllowRoot,
         MountOption::AutoUnmount,
     ];
-    let _ = fuser::mount2(fs, "/home/lucas/code/discfs/testmnt", &mount_options);
+    let _ = fuser::mount2(fs, "/home/lucas/fusetest", &mount_options);
+
+    Ok(())
 }

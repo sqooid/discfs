@@ -248,6 +248,7 @@ name = "discfs"
 version = "0.1.0"
 dependencies = [
  "fuser",
+ "libc",
  "reqwest",
  "sqlx",
  "thiserror",

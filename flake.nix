@@ -33,7 +33,6 @@
                 rustup
                 openssl.dev
                 pkg-config
-                fuse
               ];
             };
           }

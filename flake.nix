@@ -33,6 +33,7 @@
                 rustup
                 openssl.dev
                 pkg-config
+                sqlite
               ];
             };
           }

@@ -10,7 +10,9 @@ use std::{
 };
 
 /// Virtual file hosted on Discord
-pub struct DiscordFile {}
+pub struct DiscordFile {
+    buffer: [u8; 25 * 1024 * 1024],
+}
 
 impl CloudFile for DiscordFile {}
 

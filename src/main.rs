@@ -1,5 +1,6 @@
 pub mod client;
 pub mod local;
+pub mod util;
 
 use std::error::Error;
 
@@ -23,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("starting up");
 
     let fs_database = FsDatabase::new().await?;
-    let fs = DiscFs::new(fs_database);
+    let fs = DiscFs::new(fs_database)?;
     let mount_options = [
         MountOption::NoDev,
         MountOption::NoSuid,

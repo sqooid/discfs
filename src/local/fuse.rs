@@ -16,7 +16,7 @@ use crate::{
     util::{fs::attrs_from_node, time::float_to_time},
 };
 
-use super::{db::FsDatabase, error::FsError, virtual_fs::VirtualFs};
+use super::{db::FsDatabase, error::FsError};
 
 pub struct DiscFs {
     db: Arc<FsDatabase>,
@@ -31,8 +31,6 @@ impl DiscFs {
         })
     }
 }
-
-impl VirtualFs for DiscFs {}
 
 impl Filesystem for DiscFs {
     fn lookup(

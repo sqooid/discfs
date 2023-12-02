@@ -34,6 +34,7 @@
                 openssl.dev
                 pkg-config
                 sqlite
+                fuse3
               ];
             };
           }

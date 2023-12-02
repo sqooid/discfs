@@ -1,5 +1,7 @@
 use reqwest::{header, ClientBuilder};
 
+use crate::local::db::FsNode;
+
 use super::{
     client::{CloudClient, CloudFile},
     error::ClientError,
@@ -12,9 +14,23 @@ use std::{
 /// Virtual file hosted on Discord
 pub struct DiscordFile {
     buffer: [u8; 25 * 1024 * 1024],
+    node: FsNode,
 }
 
-impl CloudFile for DiscordFile {}
+impl DiscordFile {
+    pub fn new(node: FsNode) -> Self {
+        DiscordFile {
+            buffer: [0; 25 * 1024 * 1024],
+            node,
+        }
+    }
+}
+
+impl CloudFile for DiscordFile {
+    fn node(&self) -> &crate::local::db::FsNode {
+        &self.node
+    }
+}
 
 impl Read for DiscordFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {

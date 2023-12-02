@@ -3,10 +3,11 @@ use std::{sync::Arc, time::Duration};
 use fuser::Filesystem;
 use libc::{c_int, EEXIST, ENOENT};
 use log::debug;
-use tokio::{spawn, task::JoinHandle};
+use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
     client::{client::CloudClient, discord::DiscordClient},
+    local::{db::FsNode, error::DbError},
     util::fs::attrs_from_node,
 };
 
@@ -18,11 +19,13 @@ pub struct DiscFs {
     db: Arc<FsDatabase>,
     ctype: CloudType,
     client: Arc<dyn CloudClient>,
+    rt: Handle,
 }
 
 impl DiscFs {
-    pub fn new(db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
+    pub fn new(rt: Handle, db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
         Ok(Self {
+            rt,
             db: Arc::new(db),
             client: Arc::new(match ctype {
                 CloudType::Discord => DiscordClient::new()?,
@@ -44,17 +47,22 @@ impl Filesystem for DiscFs {
 
         let db = Arc::clone(&self.db);
         let name_cp = name.to_owned();
-        let _: JoinHandle<Result<(), FsError>> = spawn(async move {
-            let node = db.get_node(parent, &name_cp).await;
-            match node {
-                Ok(n) => match n {
-                    Some(n) => reply.entry(&Duration::from_millis(64), &attrs_from_node(&n)?, 0),
-                    None => reply.error(ENOENT),
-                },
-                Err(_) => reply.error(EUNKNOWN),
-            }
-            Ok(())
-        });
+        let node = self
+            .rt
+            .block_on(async { db.get_node(parent, &name_cp).await });
+        match node {
+            Ok(n) => match n {
+                Some(n) => {
+                    if let Ok(attrs) = &attrs_from_node(&n) {
+                        reply.entry(&Duration::from_millis(64), attrs, 0)
+                    } else {
+                        reply.error(EUNKNOWN)
+                    }
+                }
+                None => reply.error(ENOENT),
+            },
+            Err(_) => reply.error(EUNKNOWN),
+        };
     }
 
     fn mkdir(
@@ -72,17 +80,22 @@ impl Filesystem for DiscFs {
         );
         let db = Arc::clone(&self.db);
         let name = name.to_owned();
-        let _: JoinHandle<Result<(), FsError>> = spawn(async move {
-            let result = db.create_node(parent, &name, true).await;
-            match result {
-                Ok(n) => reply.entry(&Duration::from_millis(64), &attrs_from_node(&n)?, 0),
-                Err(e) => match e {
-                    crate::local::error::DbError::Exists(_, _) => reply.error(EEXIST),
-                    _ => reply.error(EUNKNOWN),
-                },
+        let node = self
+            .rt
+            .block_on(async { db.create_node(parent, &name, true).await });
+        match node {
+            Ok(n) => {
+                if let Ok(attrs) = &attrs_from_node(&n) {
+                    reply.entry(&Duration::from_millis(64), attrs, 0)
+                } else {
+                    reply.error(EUNKNOWN)
+                }
             }
-            Ok(())
-        });
+            Err(e) => match e {
+                crate::local::error::DbError::Exists(_, _) => reply.error(EEXIST),
+                _ => reply.error(EUNKNOWN),
+            },
+        }
     }
 }
 

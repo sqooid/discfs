@@ -11,8 +11,7 @@ use log::{debug, info, LevelFilter};
 
 use crate::local::{cli::Cli, fuse::CloudType};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     env_logger::builder()
         .filter_level(match cli.verbosity {
@@ -29,8 +28,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let _ = dotenv_vault::dotenv();
     }
 
-    let fs_database = FsDatabase::new(&cli.db_path).await?;
-    let fs = DiscFs::new(fs_database, CloudType::Discord)?;
+    let rt = tokio::runtime::Runtime::new()?;
+
+    let fs_database = rt.block_on(async { FsDatabase::new(&cli.db_path).await })?;
+    let fs = DiscFs::new(rt.handle().to_owned(), fs_database, CloudType::Discord)?;
     let mount_options = [
         MountOption::NoDev,
         MountOption::NoSuid,

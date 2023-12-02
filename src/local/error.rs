@@ -9,7 +9,7 @@ pub enum DbError {
     ConnectionError(String),
 
     #[error("Query error")]
-    QueryError(#[from] sqlx::error::Error),
+    SqlxError(#[from] sqlx::error::Error),
 }
 
 #[derive(Error, Debug)]

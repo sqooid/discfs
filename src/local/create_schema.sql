@@ -1,4 +1,3 @@
-
 create table node (
     id integer primary key,
     name text,

@@ -1,4 +1,4 @@
-use std::{env, ffi::OsStr, str::FromStr};
+use std::{env, ffi::OsStr, path::Path, str::FromStr};
 
 use log::info;
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};
@@ -10,15 +10,11 @@ pub struct FsDatabase {
 }
 
 impl FsDatabase {
-    pub async fn new() -> Result<Self, DbError> {
-        let db_url = env::var("SQLITE_URL").map_err(|e| DbError::ConnectionError(e.to_string()))?;
-        let connection_options = SqliteConnectOptions::from_str(&db_url)
-            .map_err(|e| DbError::ConnectionError(e.to_string()))?
-            .create_if_missing(true);
+    pub async fn new(path: &str) -> Result<Self, DbError> {
+        let db_url = format!("sqlite:{}", path);
+        let connection_options = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
 
-        let connection = SqlitePool::connect_with(connection_options)
-            .await
-            .map_err(|e| DbError::ConnectionError(e.to_string()))?;
+        let connection = SqlitePool::connect_with(connection_options).await?;
 
         {
             let initialized =
@@ -58,8 +54,7 @@ insert into node (id, name, parent) values (1, null, null);
             ",
         )
         .execute(connection)
-        .await
-        .map_err(|e| DbError::QueryError(e))?;
+        .await?;
 
         Ok(())
     }
@@ -74,8 +69,7 @@ insert into node (id, name, parent) values (1, null, null);
             name
         )
         .fetch_optional(&self.connection)
-        .await
-        .map_err(|e| (DbError::QueryError(e)))?;
+        .await?;
         Ok(node)
     }
 }
@@ -89,15 +83,4 @@ pub struct FsNode {
     pub parent: Option<i64>,
     pub directory: bool,
     pub cloud_id: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::FsDatabase;
-
-    #[tokio::test]
-    async fn test_connection() {
-        let db = FsDatabase::new().await.unwrap();
-        let tables = sqlx::query!("create table test (id int)");
-    }
 }

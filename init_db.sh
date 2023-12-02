@@ -1,3 +1,3 @@
-rm target/dev.db
+rm fs.db
 script="$(cat src/local/create_schema.sql)"
-sqlite3 target/dev.db "$script"
+sqlite3 fs.db "$script"

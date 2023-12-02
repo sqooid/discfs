@@ -1,6 +1,7 @@
 /target
 .direnv
 .env*
+*.db
 .flaskenv*
 !.env.project
 !.env.vault

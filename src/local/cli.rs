@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 
 #[derive(Debug, Parser)]
 #[command(name = "discfs")]
@@ -9,6 +9,9 @@ pub struct Cli {
     /// Use dotenv-vault (https://www.dotenv.org/docs/)
     #[arg(long)]
     pub dotenv: bool,
+
+    #[arg(short, action = ArgAction::Count)]
+    pub verbosity: u8,
 
     /// Path to mount virtual filesystem at
     pub mountpoint: String,

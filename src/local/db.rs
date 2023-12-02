@@ -1,4 +1,4 @@
-use std::{env, ffi::OsStr, path::Path, str::FromStr};
+use std::{ffi::OsStr, str::FromStr};
 
 use log::info;
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};

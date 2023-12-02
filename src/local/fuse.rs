@@ -1,21 +1,11 @@
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::Duration};
 
-use fuser::{FileAttr, FileType, Filesystem};
+use fuser::Filesystem;
 use libc::ENOENT;
 use log::debug;
-use tokio::{
-    runtime::{Handle, Runtime},
-    spawn,
-    task::JoinHandle,
-};
+use tokio::{spawn, task::JoinHandle};
 
-use crate::{
-    local::error::DbError,
-    util::{fs::attrs_from_node, time::float_to_time},
-};
+use crate::util::fs::attrs_from_node;
 
 use super::{db::FsDatabase, error::FsError};
 

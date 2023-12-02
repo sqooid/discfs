@@ -1,7 +1,7 @@
 use log::{debug, error};
 use reqwest::{
-    header::{self, HeaderMap, HeaderValue},
-    multipart::{self, Form},
+    header::{self},
+    multipart::{self},
     ClientBuilder, StatusCode,
 };
 use serde::Deserialize;
@@ -14,7 +14,6 @@ use super::{
     error::ClientError,
 };
 use std::{
-    collections::HashMap,
     env,
     io::{Read, Write},
 };
@@ -47,7 +46,7 @@ impl CloudFile for DiscordFile {
 
 impl Read for DiscordFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let buf_size = buf.len();
+        let _buf_size = buf.len();
         todo!()
     }
 }
@@ -148,7 +147,7 @@ impl DiscordClient {
 }
 
 impl CloudClient for DiscordClient {
-    fn list_files(path: &str) {
+    fn list_files(_path: &str) {
         todo!()
     }
 }

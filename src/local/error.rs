@@ -1,4 +1,7 @@
+use clap::error;
 use thiserror::Error;
+
+use crate::client::error::ClientError;
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -19,4 +22,7 @@ pub enum FsError {
 
     #[error("Erro with system time: {0}")]
     TimeError(String),
+
+    #[error("Client error: {0}")]
+    ClientError(#[from] ClientError),
 }

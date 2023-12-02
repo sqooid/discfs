@@ -5,17 +5,28 @@ use libc::ENOENT;
 use log::debug;
 use tokio::{spawn, task::JoinHandle};
 
-use crate::util::fs::attrs_from_node;
+use crate::{
+    client::{client::CloudClient, discord::DiscordClient},
+    util::fs::attrs_from_node,
+};
 
 use super::{db::FsDatabase, error::FsError};
 
 pub struct DiscFs {
     db: Arc<FsDatabase>,
+    ctype: CloudType,
+    client: Arc<dyn CloudClient>,
 }
 
 impl DiscFs {
-    pub fn new(db: FsDatabase) -> Result<Self, FsError> {
-        Ok(Self { db: Arc::new(db) })
+    pub fn new(db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
+        Ok(Self {
+            db: Arc::new(db),
+            client: Arc::new(match ctype {
+                CloudType::Discord => DiscordClient::new()?,
+            }),
+            ctype,
+        })
     }
 }
 
@@ -43,4 +54,24 @@ impl Filesystem for DiscFs {
             Ok(())
         });
     }
+
+    fn mkdir(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        mode: u32,
+        umask: u32,
+        reply: fuser::ReplyEntry,
+    ) {
+        debug!(
+            "[Not Implemented] mkdir(parent: {:#x?}, name: {:?}, mode: {}, umask: {:#x?})",
+            parent, name, mode, umask
+        );
+        reply.error(ENOSYS);
+    }
+}
+
+pub enum CloudType {
+    Discord,
 }

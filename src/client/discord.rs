@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use log::{debug, error};
 use reqwest::{
     header::{self},
@@ -16,24 +17,27 @@ use super::{
 use std::{
     env,
     io::{Read, Write},
+    sync::Arc,
 };
 
 const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
 /// Virtual file hosted on Discord
 pub struct DiscordFile {
     buffer: Vec<u8>,
-    client: reqwest::Client,
     buf_size: usize,
     node: FsNode,
+    prev_id: Option<String>,
+    client: Arc<DiscordClient>,
 }
 
 impl DiscordFile {
-    pub fn new(client: reqwest::Client, node: FsNode) -> Self {
+    pub fn new(client: Arc<DiscordClient>, node: FsNode) -> Self {
         DiscordFile {
-            client,
-            buffer: vec![],
+            buffer: vec![0; DISCORD_BLOCK_SIZE],
             buf_size: 0,
             node,
+            prev_id: None,
+            client,
         }
     }
 }
@@ -50,13 +54,17 @@ impl Read for DiscordFile {
         todo!()
     }
 }
+
 impl Write for DiscordFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let buf_size = buf.len();
         let total_buf_size = self.buf_size + buf_size;
         // Need to upload a block
         if total_buf_size > DISCORD_BLOCK_SIZE {
+            let slice = &buf[..DISCORD_BLOCK_SIZE - &self.buffer.len()];
+            slice.iter().for_each(|b| self.buffer.push(*b));
         } else {
+            buf.iter().for_each(|b| self.buffer.push(*b));
         }
         todo!()
     }
@@ -97,8 +105,11 @@ impl DiscordClient {
             client: discord_client,
         });
     }
+}
 
-    pub async fn create_message(
+#[async_trait]
+impl CloudClient for DiscordClient {
+    async fn create_message(
         &self,
         channel_id: &str,
         file: &[u8],
@@ -146,12 +157,6 @@ impl DiscordClient {
     }
 }
 
-impl CloudClient for DiscordClient {
-    fn list_files(_path: &str) {
-        todo!()
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct DiscordMessage {
     id: String,
@@ -173,7 +178,7 @@ mod test {
             .create_message(
                 &env::var("CHANNEL_ID").unwrap(),
                 &vec![0; DISCORD_BLOCK_SIZE],
-                Some("1180375610288259142"),
+                None,
             )
             .await;
         result.unwrap();

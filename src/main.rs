@@ -9,7 +9,7 @@ use fuser::MountOption;
 use local::{db::FsDatabase, fuse::DiscFs};
 use log::{debug, info, LevelFilter};
 
-use crate::local::cli::Cli;
+use crate::local::{cli::Cli, fuse::CloudType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let fs_database = FsDatabase::new(&cli.db_path).await?;
-    let fs = DiscFs::new(fs_database)?;
+    let fs = DiscFs::new(fs_database, CloudType::Discord)?;
     let mount_options = [
         MountOption::NoDev,
         MountOption::NoSuid,

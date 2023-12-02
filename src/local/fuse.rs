@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use fuser::Filesystem;
-use libc::ENOENT;
+use libc::{c_int, EEXIST, ENOENT};
 use log::debug;
 use tokio::{spawn, task::JoinHandle};
 
@@ -11,6 +11,8 @@ use crate::{
 };
 
 use super::{db::FsDatabase, error::FsError};
+
+const EUNKNOWN: c_int = 99;
 
 pub struct DiscFs {
     db: Arc<FsDatabase>,
@@ -43,13 +45,13 @@ impl Filesystem for DiscFs {
         let db = Arc::clone(&self.db);
         let name_cp = name.to_owned();
         let _: JoinHandle<Result<(), FsError>> = spawn(async move {
-            let node = db
-                .get_node(parent, &name_cp)
-                .await
-                .map_err(|e| FsError::DatabaseError(e))?;
+            let node = db.get_node(parent, &name_cp).await;
             match node {
-                Some(n) => reply.entry(&Duration::from_millis(64), &attrs_from_node(&n)?, 0),
-                None => reply.error(ENOENT),
+                Ok(n) => match n {
+                    Some(n) => reply.entry(&Duration::from_millis(64), &attrs_from_node(&n)?, 0),
+                    None => reply.error(ENOENT),
+                },
+                Err(_) => reply.error(EUNKNOWN),
             }
             Ok(())
         });
@@ -65,10 +67,22 @@ impl Filesystem for DiscFs {
         reply: fuser::ReplyEntry,
     ) {
         debug!(
-            "[Not Implemented] mkdir(parent: {:#x?}, name: {:?}, mode: {}, umask: {:#x?})",
+            "mkdir(parent: {:#x?}, name: {:?}, mode: {}, umask: {:#x?})",
             parent, name, mode, umask
         );
-        reply.error(ENOSYS);
+        let db = Arc::clone(&self.db);
+        let name = name.to_owned();
+        let _: JoinHandle<Result<(), FsError>> = spawn(async move {
+            let result = db.create_node(parent, &name, true).await;
+            match result {
+                Ok(n) => reply.entry(&Duration::from_millis(64), &attrs_from_node(&n)?, 0),
+                Err(e) => match e {
+                    crate::local::error::DbError::Exists(_, _) => reply.error(EEXIST),
+                    _ => reply.error(EUNKNOWN),
+                },
+            }
+            Ok(())
+        });
     }
 }
 

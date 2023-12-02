@@ -72,6 +72,40 @@ insert into node (id, name, parent) values (1, null, null);
         .await?;
         Ok(node)
     }
+
+    pub async fn create_node(
+        &self,
+        parent: u64,
+        name: &OsStr,
+        directory: bool,
+    ) -> Result<FsNode, DbError> {
+        let parent_id = parent as i64;
+        let name = name.to_string_lossy();
+        let node = sqlx::query_as!(
+            FsNode,
+            "select * from node where parent=? and name=?",
+            parent_id,
+            name
+        )
+        .fetch_optional(&self.connection)
+        .await?;
+        if let Some(node) = node {
+            return Err(DbError::Exists(node.id, name.to_string()));
+        }
+        let new_node = sqlx::query_as!(
+            FsNode,
+            "insert into node (parent, name, directory) values (?, ?, ?); select * from node where parent=? and name=?",
+            parent_id,
+            name,
+            directory,
+            parent_id,
+            name,
+        )
+        .fetch_one(&self.connection)
+        .await?;
+
+        Ok(new_node)
+    }
 }
 
 pub struct FsNode {

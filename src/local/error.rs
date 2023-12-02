@@ -10,6 +10,9 @@ pub enum DbError {
 
     #[error("Query error")]
     SqlxError(#[from] sqlx::error::Error),
+
+    #[error("Node already exists: {1} ({0})")]
+    Exists(i64, String),
 }
 
 #[derive(Error, Debug)]

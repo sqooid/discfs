@@ -1,6 +1,11 @@
-use std::{collections::HashMap, result, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    result,
+    sync::Arc,
+    time::Duration,
+};
 
-use fuser::Filesystem;
+use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, ENOENT};
 use log::{debug, error};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
@@ -24,6 +29,7 @@ pub struct DiscFs {
     client: Arc<dyn CloudClient>,
     rt: Handle,
     file_handles: HashMap<u64, Box<dyn CloudFile>>,
+    started_dirs: HashSet<u64>,
 }
 
 impl DiscFs {
@@ -37,6 +43,7 @@ impl DiscFs {
             rt,
             ctype,
             file_handles: HashMap::new(),
+            started_dirs: HashSet::new(),
         })
     }
 }
@@ -223,6 +230,48 @@ impl Filesystem for DiscFs {
             }
         } else {
             reply.error(ENOENT)
+        }
+    }
+
+    fn readdir(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        ino: u64,
+        _fh: u64,
+        offset: i64,
+        mut reply: fuser::ReplyDirectory,
+    ) {
+        if self.started_dirs.contains(&ino) {
+            self.started_dirs.remove(&ino);
+            reply.ok();
+            return;
+        }
+        debug!("readdir ino: {:?} offset: {:?}", ino, offset);
+        let result = self
+            .rt
+            .block_on(async { self.db.get_nodes_by_parent(ino as i64).await });
+        if let Ok(nodes) = result {
+            debug!("files {:?}", &nodes);
+            let mut full = false;
+            let mut i = offset as usize;
+            while !full && i < nodes.len() {
+                let node = &nodes[i];
+                full = reply.add(
+                    node.id as u64,
+                    0,
+                    if node.directory {
+                        FileType::Directory
+                    } else {
+                        FileType::RegularFile
+                    },
+                    node.name.clone().unwrap_or_else(|| "".to_string()),
+                );
+                i += 1;
+            }
+            self.started_dirs.insert(ino);
+            reply.ok();
+        } else {
+            reply.error(EUNKNOWN);
         }
     }
 }

@@ -138,6 +138,13 @@ insert into node (id, name, parent) values (1, null, null);
             Ok(())
         }
     }
+
+    pub async fn get_nodes_by_parent(&self, parent_id: i64) -> Result<Vec<FsNode>, DbError> {
+        let result = sqlx::query_as!(FsNode, "select * from node where parent=?", parent_id)
+            .fetch_all(&self.connection)
+            .await?;
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Clone)]

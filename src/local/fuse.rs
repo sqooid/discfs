@@ -274,6 +274,24 @@ impl Filesystem for DiscFs {
             reply.error(EUNKNOWN);
         }
     }
+
+    fn read(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        flags: i32,
+        lock_owner: Option<u64>,
+        reply: fuser::ReplyData,
+    ) {
+        debug!(
+            "read(ino: {:#x?}, fh: {}, offset: {}, size: {}, \
+            flags: {:#x?}, lock_owner: {:?})",
+            ino, fh, offset, size, flags, lock_owner
+        );
+    }
 }
 
 pub enum CloudType {

@@ -67,7 +67,8 @@ impl Write for DiscordFile {
 
         // Need to upload a block
         if self.buffer.len() + buf.len() > DISCORD_BLOCK_SIZE {
-            let slice = &buf[..DISCORD_BLOCK_SIZE - &self.buffer.len()];
+            let space = DISCORD_BLOCK_SIZE - &self.buffer.len();
+            let slice = &buf[..space];
             slice.iter().for_each(|b| self.buffer.push(*b));
 
             // Upload
@@ -75,7 +76,7 @@ impl Write for DiscordFile {
 
             self.prev_id = Some(message_id);
             self.buffer.clear();
-            let slice = &buf[DISCORD_BLOCK_SIZE - &self.buffer.len()..];
+            let slice = &buf[space..];
             slice.iter().for_each(|b| self.buffer.push(*b));
         } else {
             buf.iter().for_each(|b| self.buffer.push(*b));

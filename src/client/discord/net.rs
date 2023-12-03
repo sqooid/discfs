@@ -49,6 +49,8 @@ impl DiscordNetClient {
         });
     }
 
+    /// Send a message to specified channel and if part of a larger file, link the previous chunk as a reply.
+    /// Returns the id of the created message for future reference
     pub async fn create_message(
         &self,
         channel_id: &str,

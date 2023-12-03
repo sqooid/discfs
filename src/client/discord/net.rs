@@ -57,7 +57,7 @@ impl DiscordNetClient {
     ) -> Result<String, ClientError> {
         let mut form_data = multipart::Form::new();
 
-        let part = multipart::Part::bytes(file.to_owned()).file_name("file");
+        let part = multipart::Part::bytes(file.to_owned()).file_name("file.txt");
         form_data = form_data.part("files[0]", part);
 
         if let Some(id) = reply_id {

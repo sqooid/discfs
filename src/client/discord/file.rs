@@ -16,7 +16,7 @@ pub const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
 /// Virtual file hosted on Discord
 pub struct DiscordFile {
     buffer: Vec<u8>,
-    buf_size: usize,
+    total_size: i64,
     node: FsNode,
     prev_id: Option<String>,
     client: Arc<DiscordNetClient>,
@@ -27,7 +27,7 @@ impl DiscordFile {
     pub fn new(client: Arc<DiscordNetClient>, db: Arc<FsDatabase>, node: FsNode) -> Self {
         DiscordFile {
             buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
-            buf_size: 0,
+            total_size: 0,
             node,
             prev_id: None,
             client,
@@ -63,11 +63,10 @@ impl Read for DiscordFile {
 
 impl Write for DiscordFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let buf_size = buf.len();
-        let total_buf_size = self.buf_size + buf_size;
+        self.total_size += buf.len() as i64;
 
         // Need to upload a block
-        if total_buf_size > DISCORD_BLOCK_SIZE {
+        if self.buffer.len() + buf.len() > DISCORD_BLOCK_SIZE {
             let slice = &buf[..DISCORD_BLOCK_SIZE - &self.buffer.len()];
             slice.iter().for_each(|b| self.buffer.push(*b));
 
@@ -87,9 +86,11 @@ impl Write for DiscordFile {
     fn flush(&mut self) -> std::io::Result<()> {
         if self.buffer.len() > 0 {
             let message_id = self.upload_buffer()?;
-            self.client
-                .rt
-                .block_on(async { self.db.set_node_cloud_id(&self.node.id, &message_id).await })?;
+            self.client.rt.block_on(async {
+                self.db
+                    .set_node_cloud_id(&self.node.id, &message_id, self.total_size)
+                    .await
+            })?;
         }
         Ok(())
     }

@@ -1,7 +1,9 @@
-use std::{ffi::OsStr, str::FromStr};
+use std::{ffi::OsStr, str::FromStr, time::SystemTime};
 
 use log::info;
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};
+
+use crate::util::time::time_to_float;
 
 use super::error::DbError;
 
@@ -99,12 +101,14 @@ insert into node (id, name, parent) values (1, null, null);
         if let Some(node) = node {
             return Err(DbError::Exists(node.id, name.to_string()));
         }
+        let ctime = time_to_float(&SystemTime::now()).map_err(|e| DbError::Other(e.to_string()))?;
         let new_node = sqlx::query_as!(
             FsNode,
-            "insert into node (parent, name, directory) values (?, ?, ?); select * from node where parent=? and name=?",
+            "insert into node (parent, name, directory, ctime) values (?, ?, ?, ?); select * from node where parent=? and name=?",
             parent_id,
             name,
             directory,
+            ctime,
             parent_id,
             name,
         )
@@ -114,10 +118,20 @@ insert into node (id, name, parent) values (1, null, null);
         Ok(new_node)
     }
 
-    pub async fn set_node_cloud_id(&self, id: &i64, cloud_id: &str) -> Result<(), DbError> {
-        let result = sqlx::query!("update node set cloud_id=? where id=?", cloud_id, id)
-            .execute(&self.connection)
-            .await?;
+    pub async fn set_node_cloud_id(
+        &self,
+        id: &i64,
+        cloud_id: &str,
+        size: i64,
+    ) -> Result<(), DbError> {
+        let result = sqlx::query!(
+            "update node set cloud_id=?, size=? where id=?",
+            cloud_id,
+            id,
+            size
+        )
+        .execute(&self.connection)
+        .await?;
         if result.rows_affected() == 0 {
             Err(DbError::DoesNotExist(*id))
         } else {

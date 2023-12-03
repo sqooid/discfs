@@ -15,6 +15,9 @@ pub enum DbError {
 
     #[error("Node does not exist {0}")]
     DoesNotExist(i64),
+
+    #[error("Other error: {0}")]
+    Other(String),
 }
 
 #[derive(Error, Debug)]

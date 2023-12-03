@@ -1,9 +1,9 @@
 use std::env;
 
-use log::{debug, error};
+use log::{debug, error, trace};
 use reqwest::{header, multipart, ClientBuilder, StatusCode};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, to_string_pretty};
 use tokio::runtime::Handle;
 
 use crate::client::error::ClientError;
@@ -13,23 +13,28 @@ struct DiscordMessageUpload {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct DiscordMessageDownload {
     id: String,
     attachments: Vec<DiscordAttachment>,
-    message_reference: Option<String>,
+    message_reference: Option<DiscordReference>,
     referenced_message: Option<Box<DiscordMessageDownload>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+struct DiscordReference {
+    message_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct DiscordAttachment {
-    size: u64,
-    url: String,
+    id: String,
 }
 
 pub struct DiscordNetClient {
     client: reqwest::Client,
     url: String,
+    files_url: String,
     pub channel_id: String,
     pub rt: Handle,
 }
@@ -56,6 +61,8 @@ impl DiscordNetClient {
 
         return Ok(Self {
             url: env::var("DISCORD_URL").map_err(|e| ClientError::Initialization(e.to_string()))?,
+            files_url: env::var("DISCORD_FILES_URL")
+                .map_err(|e| ClientError::Initialization(e.to_string()))?,
             client: discord_client,
             channel_id: env::var("CHANNEL_ID")
                 .map_err(|e| ClientError::Initialization(e.to_string()))?,
@@ -112,8 +119,46 @@ impl DiscordNetClient {
         Ok(body.id)
     }
 
-    async fn get_file_chain(&self, end_id: &str) -> Result<Vec<u64>, ClientError> {
-        let reverse_ids = vec![u64::from_str_radix(end_id, 10)?];
+    async fn get_file_chain(
+        &self,
+        channel_id: &str,
+        end_id: &str,
+    ) -> Result<Vec<u64>, ClientError> {
+        let mut reverse_ids = vec![];
+
+        let mut send_id = Some(end_id.to_owned());
+        while let Some(id) = &send_id {
+            let builder = self
+                .client
+                .get(format!(
+                    "{}/channels/{}/messages/{}",
+                    self.url, channel_id, id
+                ))
+                .build()?;
+            debug!("download request: {:?}", builder);
+            let response = self.client.execute(builder).await?;
+
+            let body: DiscordMessageDownload = response.json().await?;
+            trace!(
+                "download body: {}",
+                serde_json::to_string_pretty(&body).unwrap()
+            );
+
+            // Can add ids 2 at a time due to message_reference being included
+            if let Some(attachment) = &body.attachments.get(0) {
+                reverse_ids.push(u64::from_str_radix(&attachment.id, 10)?);
+            }
+            if let Some(message) = body.referenced_message {
+                if let Some(attachment) = message.attachments.get(0) {
+                    reverse_ids.push(u64::from_str_radix(&attachment.id, 10)?);
+                }
+
+                // Set next query
+                send_id = message.message_reference.map(|m| m.message_id);
+            } else {
+                send_id = None;
+            }
+        }
 
         Ok(reverse_ids.into_iter().rev().collect())
     }
@@ -129,7 +174,7 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    #[tokio::test]
+    // #[tokio::test]
     async fn test_create_message() {
         init();
         let client = DiscordNetClient::new(Handle::current()).unwrap();
@@ -141,5 +186,15 @@ mod test {
             )
             .await;
         result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_chain() {
+        init();
+        let client = DiscordNetClient::new(Handle::current()).unwrap();
+        let result = client
+            .get_file_chain(&env::var("CHANNEL_ID").unwrap(), "1180745540821057659")
+            .await;
+        debug!("chain: {:?}", result.unwrap());
     }
 }

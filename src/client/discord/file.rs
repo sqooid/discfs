@@ -7,7 +7,10 @@ use log::error;
 
 use crate::{
     client::error::ClientError,
-    local::db::{FsDatabase, FsNode},
+    local::{
+        db::{FsDatabase, FsNode},
+        error::FsError,
+    },
 };
 
 use super::net::DiscordNetClient;
@@ -93,13 +96,24 @@ pub struct DiscordFileRead {
 }
 
 impl DiscordFileRead {
-    pub fn new(client: Arc<DiscordNetClient>, db: Arc<FsDatabase>, node: FsNode) -> Self {
-        Self {
+    pub fn new(client: Arc<DiscordNetClient>, node: FsNode) -> Result<Self, FsError> {
+        let ids: Result<Vec<u64>, FsError> = client.rt.block_on(async {
+            let cloud_id = node.cloud_id.as_ref().ok_or_else(|| {
+                FsError::DatabaseError(crate::local::error::DbError::Other(
+                    "Cloud id not set".to_string(),
+                ))
+            })?;
+            client
+                .get_file_chain(&client.channel_id, &cloud_id)
+                .await
+                .map_err(|e| FsError::ClientError(e))
+        });
+        Ok(Self {
             node,
             client,
-            file_ids: vec![],
+            file_ids: ids?,
             buffer: vec![],
-        }
+        })
     }
 }
 

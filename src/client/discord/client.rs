@@ -1,14 +1,23 @@
-use std::{io::Write, sync::Arc};
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use tokio::runtime::Handle;
 
 use crate::{
     client::{client::CloudClient, error::ClientError},
-    local::db::{FsDatabase, FsNode},
+    local::{
+        db::{FsDatabase, FsNode},
+        error::FsError,
+    },
 };
 
-use super::{file::DiscordFileWrite, net::DiscordNetClient};
+use super::{
+    file::{DiscordFileRead, DiscordFileWrite},
+    net::DiscordNetClient,
+};
 
 /// Virtual file host
 pub struct DiscordClient {
@@ -27,11 +36,17 @@ impl DiscordClient {
 
 #[async_trait]
 impl CloudClient for DiscordClient {
-    fn create_file(&self, node: FsNode) -> Box<dyn Write> {
+    fn open_file_write(&self, node: FsNode) -> Box<dyn Write> {
         Box::new(DiscordFileWrite::new(
             self.net_client.clone(),
             self.db.clone(),
             node,
         ))
+    }
+    fn open_file_read(&self, node: FsNode) -> Result<Box<dyn Read>, FsError> {
+        Ok(Box::new(DiscordFileRead::new(
+            self.net_client.clone(),
+            node,
+        )?))
     }
 }

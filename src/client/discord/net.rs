@@ -119,7 +119,7 @@ impl DiscordNetClient {
         Ok(body.id)
     }
 
-    async fn get_file_chain(
+    pub async fn get_file_chain(
         &self,
         channel_id: &str,
         end_id: &str,

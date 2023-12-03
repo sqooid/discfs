@@ -144,16 +144,25 @@ impl Filesystem for DiscFs {
         }
     }
 
-    fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+    fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, flags: i32, reply: fuser::ReplyOpen) {
         let node = self
             .rt
             .block_on(async { self.db.get_node_by_id(ino).await });
         match node {
             Ok(n) => match n {
                 Some(n) => {
-                    let file = self.client.create_file(n.clone());
-                    self.write_handles.insert(n.id as u64, file);
-                    reply.opened(0, 0b111111111)
+                    if flags & 1 != 0 {
+                        let file = self.client.open_file_write(n.clone());
+                        self.write_handles.insert(n.id as u64, file);
+                        reply.opened(0, 0b110110110)
+                    } else {
+                        if let Ok(file) = self.client.open_file_read(n.clone()) {
+                            self.read_handles.insert(n.id as u64, file);
+                            reply.opened(0, 0b100100100)
+                        } else {
+                            reply.error(EUNKNOWN);
+                        }
+                    }
                 }
                 None => reply.error(ENOENT),
             },

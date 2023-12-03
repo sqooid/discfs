@@ -97,6 +97,18 @@ impl Filesystem for DiscFs {
             },
         }
     }
+
+    fn mknod(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        mode: u32,
+        umask: u32,
+        rdev: u32,
+        reply: fuser::ReplyEntry,
+    ) {
+    }
 }
 
 pub enum CloudType {

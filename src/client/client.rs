@@ -12,10 +12,5 @@ pub trait CloudFile: Read + Write {
 
 #[async_trait]
 pub trait CloudClient {
-    async fn create_message(
-        &self,
-        channel_id: &str,
-        file: &[u8],
-        reply_id: Option<&str>,
-    ) -> Result<String, ClientError>;
+    async fn create_file(&self, node: FsNode) -> Box<dyn CloudFile>;
 }

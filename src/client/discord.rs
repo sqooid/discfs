@@ -27,11 +27,11 @@ pub struct DiscordFile {
     buf_size: usize,
     node: FsNode,
     prev_id: Option<String>,
-    client: Arc<DiscordClient>,
+    client: Arc<DiscordNetClient>,
 }
 
 impl DiscordFile {
-    pub fn new(client: Arc<DiscordClient>, node: FsNode) -> Self {
+    pub fn new(client: Arc<DiscordNetClient>, node: FsNode) -> Self {
         DiscordFile {
             buffer: vec![0; DISCORD_BLOCK_SIZE],
             buf_size: 0,
@@ -76,11 +76,23 @@ impl Write for DiscordFile {
 
 /// Virtual file host
 pub struct DiscordClient {
+    net_client: Arc<DiscordNetClient>,
+}
+
+impl DiscordClient {
+    pub fn new() -> Result<Self, ClientError> {
+        Ok(Self {
+            net_client: Arc::new(DiscordNetClient::new()?),
+        })
+    }
+}
+
+pub struct DiscordNetClient {
     client: reqwest::Client,
     url: String,
 }
 
-impl DiscordClient {
+impl DiscordNetClient {
     pub fn new() -> Result<Self, ClientError> {
         // Set up discord bot token
         let mut default_headers = header::HeaderMap::new();
@@ -105,10 +117,7 @@ impl DiscordClient {
             client: discord_client,
         });
     }
-}
 
-#[async_trait]
-impl CloudClient for DiscordClient {
     async fn create_message(
         &self,
         channel_id: &str,
@@ -157,6 +166,13 @@ impl CloudClient for DiscordClient {
     }
 }
 
+#[async_trait]
+impl CloudClient for DiscordClient {
+    async fn create_file(&self, node: FsNode) -> Box<dyn CloudFile> {
+        Box::new(DiscordFile::new(self.net_client.clone(), node))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct DiscordMessage {
     id: String,
@@ -173,7 +189,7 @@ mod test {
     #[tokio::test]
     async fn test_create_message() {
         init();
-        let client = DiscordClient::new().unwrap();
+        let client = DiscordNetClient::new().unwrap();
         let result = client
             .create_message(
                 &env::var("CHANNEL_ID").unwrap(),

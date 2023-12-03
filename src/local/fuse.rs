@@ -7,8 +7,8 @@ use std::{
 };
 
 use fuser::{FileType, Filesystem};
-use libc::{c_int, EEXIST, ENOENT};
-use log::{debug, error};
+use libc::{c_int, EEXIST, EIO, ENOENT, ENOSYS};
+use log::{debug, error, trace};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
@@ -227,18 +227,27 @@ impl Filesystem for DiscFs {
         _req: &fuser::Request<'_>,
         ino: u64,
         _fh: u64,
-        _flags: i32,
+        flags: i32,
         _lock_owner: Option<u64>,
         _flush: bool,
         reply: fuser::ReplyEmpty,
     ) {
-        if let Some(file) = self.write_handles.get_mut(&ino) {
-            match file.flush() {
-                Ok(_) => reply.ok(),
-                Err(_) => reply.error(EUNKNOWN),
+        if flags & 1 != 0 {
+            if let Some(file) = self.write_handles.get_mut(&ino) {
+                match file.flush() {
+                    Ok(_) => reply.ok(),
+                    Err(_) => reply.error(EUNKNOWN),
+                }
+                self.write_handles.remove(&ino);
+            } else {
+                reply.error(ENOENT)
             }
         } else {
-            reply.error(ENOENT)
+            if let Some(_handle) = self.read_handles.remove(&ino) {
+                reply.ok();
+            } else {
+                reply.error(ENOENT);
+            }
         }
     }
 
@@ -253,6 +262,7 @@ impl Filesystem for DiscFs {
         if self.started_dirs.contains(&ino) {
             self.started_dirs.remove(&ino);
             reply.ok();
+            debug!("readdir done");
             return;
         }
         debug!("readdir ino: {:?} offset: {:?}", ino, offset);
@@ -288,18 +298,25 @@ impl Filesystem for DiscFs {
         &mut self,
         _req: &fuser::Request<'_>,
         ino: u64,
-        fh: u64,
-        offset: i64,
+        _fh: u64,
+        _offset: i64,
         size: u32,
-        flags: i32,
-        lock_owner: Option<u64>,
+        _flags: i32,
+        _lock_owner: Option<u64>,
         reply: fuser::ReplyData,
     ) {
-        debug!(
-            "read(ino: {:#x?}, fh: {}, offset: {}, size: {}, \
-            flags: {:#x?}, lock_owner: {:?})",
-            ino, fh, offset, size, flags, lock_owner
-        );
+        if let Some(handle) = self.read_handles.get_mut(&ino) {
+            let mut buffer = vec![0; size as usize].into_boxed_slice();
+            let result = handle.read(&mut buffer);
+            if let Ok(written) = result {
+                debug!("written: {:?}", written);
+                reply.data(&buffer[..written]);
+            } else {
+                reply.error(EUNKNOWN);
+            }
+        } else {
+            reply.error(ENOENT);
+        }
     }
 }
 

@@ -8,6 +8,8 @@ use tokio::runtime::Handle;
 
 use crate::client::error::ClientError;
 
+const DISCORD_FILENAME: &str = "file.bin";
+
 #[derive(Debug, Deserialize)]
 struct DiscordMessageUpload {
     id: String,
@@ -80,7 +82,7 @@ impl DiscordNetClient {
     ) -> Result<String, ClientError> {
         let mut form_data = multipart::Form::new();
 
-        let part = multipart::Part::bytes(file.to_owned()).file_name("file.txt");
+        let part = multipart::Part::bytes(file.to_owned()).file_name(DISCORD_FILENAME);
         form_data = form_data.part("files[0]", part);
 
         if let Some(id) = reply_id {
@@ -162,6 +164,27 @@ impl DiscordNetClient {
 
         Ok(reverse_ids.into_iter().rev().collect())
     }
+
+    pub async fn download_file(
+        &self,
+        channel_id: &str,
+        attachment_id: &str,
+        buffer: &mut Vec<u8>,
+    ) -> Result<(), ClientError> {
+        if let Ok(response) = self
+            .client
+            .get(format!(
+                "{}/{}/{}/{}",
+                self.files_url, channel_id, attachment_id, DISCORD_FILENAME
+            ))
+            .send()
+            .await
+        {
+            let body = response.bytes().await?;
+            body.iter().for_each(|e| buffer.push(*e));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -193,8 +216,23 @@ mod test {
         init();
         let client = DiscordNetClient::new(Handle::current()).unwrap();
         let result = client
-            .get_file_chain(&env::var("CHANNEL_ID").unwrap(), "1180745540821057659")
+            .get_file_chain(&env::var("CHANNEL_ID").unwrap(), "1180822826584912006")
             .await;
         debug!("chain: {:?}", result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_download() {
+        init();
+        let client = DiscordNetClient::new(Handle::current()).unwrap();
+        let mut buffer: Vec<u8> = vec![];
+        let result = client
+            .download_file(
+                &env::var("CHANNEL_ID").unwrap(),
+                "1180822826329055292",
+                &mut buffer,
+            )
+            .await;
+        debug!("downloaded: {:?}", buffer.len());
     }
 }

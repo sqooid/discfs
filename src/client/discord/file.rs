@@ -1,9 +1,10 @@
 use std::{
+    cmp::min,
     io::{Read, Write},
     sync::Arc,
 };
 
-use log::error;
+use log::{debug, error, trace};
 
 use crate::{
     client::error::ClientError,
@@ -93,6 +94,7 @@ pub struct DiscordFileRead {
     node: FsNode,
     client: Arc<DiscordNetClient>,
     file_ids: Vec<u64>,
+    current_index: usize,
 }
 
 impl DiscordFileRead {
@@ -108,17 +110,72 @@ impl DiscordFileRead {
                 .await
                 .map_err(|e| FsError::ClientError(e))
         });
+        debug!("file ids: {:?}", ids);
         Ok(Self {
             node,
             client,
             file_ids: ids?,
-            buffer: vec![],
+            buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
+            current_index: 0,
         })
     }
 }
 
 impl std::io::Read for DiscordFileRead {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        todo!()
+        let read_size = buf.len();
+        let mut copied: usize = 0;
+        trace!("read buffer size: {:?}", read_size);
+
+        // Clear buffer first
+        if !self.buffer.is_empty() {
+            let buf_size = self.buffer.len();
+            let copy_size = min(buf_size, read_size);
+            trace!("clearing read buffer: {:?}/{:?} bytes", copy_size, buf_size);
+            buf[..copy_size].clone_from_slice(&self.buffer[..copy_size]);
+
+            // Left over buffer
+            if buf_size >= copy_size {
+                let leftover = self.buffer[copy_size..].to_vec();
+                self.buffer.clear();
+                self.buffer.clone_from(&leftover);
+                return Ok(copy_size);
+            }
+
+            copied += copy_size
+        }
+
+        // Or need to keep reading
+        while read_size - copied > 0 && self.current_index < self.file_ids.len() {
+            // Fill buffer with next chunk
+            let next_id: String = self
+                .file_ids
+                .get(self.current_index)
+                .unwrap_or(&0)
+                .to_string();
+            debug!("downloading id: {:?}", next_id);
+            self.client.rt.block_on(async {
+                self.client
+                    .download_file(&self.client.channel_id, &next_id, &mut self.buffer)
+                    .await
+            })?;
+
+            // Copy to output buffer
+            let buf_size = self.buffer.len();
+            let copy_size = min(buf_size, read_size - copied);
+            buf[copied..copied + copy_size].clone_from_slice(&self.buffer[..copy_size]);
+
+            // Left over buffer
+            if buf_size > copy_size {
+                let leftover = self.buffer[copy_size..].to_vec();
+                self.buffer.clear();
+                self.buffer.clone_from(&leftover);
+            }
+
+            copied += copy_size;
+            self.current_index += 1;
+        }
+
+        Ok(copied)
     }
 }

@@ -127,8 +127,8 @@ insert into node (id, name, parent) values (1, null, null);
         let result = sqlx::query!(
             "update node set cloud_id=?, size=? where id=?",
             cloud_id,
+            size,
             id,
-            size
         )
         .execute(&self.connection)
         .await?;

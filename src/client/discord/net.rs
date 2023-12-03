@@ -9,8 +9,22 @@ use tokio::runtime::Handle;
 use crate::client::error::ClientError;
 
 #[derive(Debug, Deserialize)]
-struct DiscordMessage {
+struct DiscordMessageUpload {
     id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordMessageDownload {
+    id: String,
+    attachments: Vec<DiscordAttachment>,
+    message_reference: Option<String>,
+    referenced_message: Option<Box<DiscordMessageDownload>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordAttachment {
+    size: u64,
+    url: String,
 }
 
 pub struct DiscordNetClient {
@@ -92,10 +106,14 @@ impl DiscordNetClient {
                 status, body
             )));
         }
-        let body = request.json::<DiscordMessage>().await?;
+        let body = request.json::<DiscordMessageUpload>().await?;
         debug!("uploaded message: {}", body.id);
 
         Ok(body.id)
+    }
+
+    async fn get_file_chain(&self, end_id: &str) -> Result<Vec<String>, ClientError> {
+        todo!()
     }
 }
 

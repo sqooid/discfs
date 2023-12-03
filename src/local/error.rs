@@ -1,4 +1,3 @@
-use clap::error;
 use thiserror::Error;
 
 use crate::client::error::ClientError;
@@ -8,7 +7,7 @@ pub enum DbError {
     #[error("DB connection error: {0}")]
     ConnectionError(String),
 
-    #[error("Query error")]
+    #[error("Query error {0}")]
     SqlxError(#[from] sqlx::error::Error),
 
     #[error("Node already exists: {1} ({0})")]

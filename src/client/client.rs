@@ -12,5 +12,5 @@ pub trait CloudFile: Read + Write {
 
 #[async_trait]
 pub trait CloudClient {
-    async fn create_file(&self, node: FsNode) -> Box<dyn CloudFile>;
+    fn create_file(&self, node: FsNode) -> Box<dyn CloudFile>;
 }

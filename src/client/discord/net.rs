@@ -2,8 +2,9 @@ use std::env;
 
 use log::{debug, error};
 use reqwest::{header, multipart, ClientBuilder, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::runtime::Handle;
 
 use crate::client::error::ClientError;
 
@@ -15,10 +16,12 @@ struct DiscordMessage {
 pub struct DiscordNetClient {
     client: reqwest::Client,
     url: String,
+    pub channel_id: String,
+    pub rt: Handle,
 }
 
 impl DiscordNetClient {
-    pub fn new() -> Result<Self, ClientError> {
+    pub fn new(rt: Handle) -> Result<Self, ClientError> {
         // Set up discord bot token
         let mut default_headers = header::HeaderMap::new();
         let discord_token =
@@ -40,14 +43,17 @@ impl DiscordNetClient {
         return Ok(Self {
             url: env::var("DISCORD_URL").map_err(|e| ClientError::Initialization(e.to_string()))?,
             client: discord_client,
+            channel_id: env::var("CHANNEL_ID")
+                .map_err(|e| ClientError::Initialization(e.to_string()))?,
+            rt,
         });
     }
 
-    async fn create_message(
+    pub async fn create_message(
         &self,
         channel_id: &str,
         file: &[u8],
-        reply_id: Option<&str>,
+        reply_id: &Option<String>,
     ) -> Result<String, ClientError> {
         let mut form_data = multipart::Form::new();
 
@@ -104,12 +110,12 @@ mod test {
     #[tokio::test]
     async fn test_create_message() {
         init();
-        let client = DiscordNetClient::new().unwrap();
+        let client = DiscordNetClient::new(Handle::current()).unwrap();
         let result = client
             .create_message(
                 &env::var("CHANNEL_ID").unwrap(),
                 &vec![0; DISCORD_BLOCK_SIZE],
-                None,
+                &None,
             )
             .await;
         result.unwrap();

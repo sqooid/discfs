@@ -72,6 +72,13 @@ insert into node (id, name, parent) values (1, null, null);
         .await?;
         Ok(node)
     }
+    pub async fn get_node_by_id(&self, id: u64) -> Result<Option<FsNode>, DbError> {
+        let id = id as i64;
+        let node = sqlx::query_as!(FsNode, "select * from node where id=?", id)
+            .fetch_optional(&self.connection)
+            .await?;
+        Ok(node)
+    }
 
     pub async fn create_node(
         &self,
@@ -106,8 +113,20 @@ insert into node (id, name, parent) values (1, null, null);
 
         Ok(new_node)
     }
+
+    pub async fn set_node_cloud_id(&self, id: &i64, cloud_id: &str) -> Result<(), DbError> {
+        let result = sqlx::query!("update node set cloud_id=? where id=?", cloud_id, id)
+            .execute(&self.connection)
+            .await?;
+        if result.rows_affected() == 0 {
+            Err(DbError::DoesNotExist(*id))
+        } else {
+            Ok(())
+        }
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct FsNode {
     pub id: i64,
     pub name: Option<String>,

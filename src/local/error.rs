@@ -12,6 +12,9 @@ pub enum DbError {
 
     #[error("Node already exists: {1} ({0})")]
     Exists(i64, String),
+
+    #[error("Node does not exist {0}")]
+    DoesNotExist(i64),
 }
 
 #[derive(Error, Debug)]
@@ -27,4 +30,10 @@ pub enum FsError {
 
     #[error("Client error: {0}")]
     ClientError(#[from] ClientError),
+}
+
+impl From<DbError> for std::io::Error {
+    fn from(value: DbError) -> Self {
+        std::io::Error::new(std::io::ErrorKind::Other, value)
+    }
 }

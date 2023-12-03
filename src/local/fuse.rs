@@ -1,12 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, result, sync::Arc, time::Duration};
 
 use fuser::Filesystem;
 use libc::{c_int, EEXIST, ENOENT};
-use log::debug;
+use log::{debug, error};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
-    client::{client::CloudClient, discord::client::DiscordClient},
+    client::{
+        client::{CloudClient, CloudFile},
+        discord::client::DiscordClient,
+    },
     local::{db::FsNode, error::DbError},
     util::fs::attrs_from_node,
 };
@@ -20,17 +23,20 @@ pub struct DiscFs {
     ctype: CloudType,
     client: Arc<dyn CloudClient>,
     rt: Handle,
+    file_handles: HashMap<u64, Box<dyn CloudFile>>,
 }
 
 impl DiscFs {
     pub fn new(rt: Handle, db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
+        let db = Arc::new(db);
         Ok(Self {
-            rt,
-            db: Arc::new(db),
+            db: db.clone(),
             client: Arc::new(match ctype {
-                CloudType::Discord => DiscordClient::new()?,
+                CloudType::Discord => DiscordClient::new(rt.clone(), db)?,
             }),
+            rt,
             ctype,
+            file_handles: HashMap::new(),
         })
     }
 }
@@ -108,6 +114,116 @@ impl Filesystem for DiscFs {
         rdev: u32,
         reply: fuser::ReplyEntry,
     ) {
+        debug!(
+            "mknod(parent: {:#x?}, name: {:?}, mode: {}, \
+            umask: {:#x?}, rdev: {})",
+            parent, name, mode, umask, rdev
+        );
+        let node = self
+            .rt
+            .block_on(async { self.db.create_node(parent, name, false).await });
+        match node {
+            Ok(n) => match attrs_from_node(&n) {
+                Ok(attrs) => reply.entry(&Duration::from_millis(64), &attrs, 0),
+                Err(e) => {
+                    error!("error in mknod: {:?}", e);
+                    reply.error(EUNKNOWN)
+                }
+            },
+            Err(e) => match e {
+                DbError::Exists(_, _) => reply.error(EEXIST),
+                _ => reply.error(EUNKNOWN),
+            },
+        }
+    }
+
+    fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+        let node = self
+            .rt
+            .block_on(async { self.db.get_node_by_id(ino).await });
+        match node {
+            Ok(n) => match n {
+                Some(n) => {
+                    let file = self.client.create_file(n.clone());
+                    self.file_handles.insert(n.id as u64, file);
+                    reply.opened(0, 0b111111111)
+                }
+                None => reply.error(ENOENT),
+            },
+            Err(_) => reply.error(EUNKNOWN),
+        }
+    }
+
+    fn write(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        data: &[u8],
+        write_flags: u32,
+        flags: i32,
+        lock_owner: Option<u64>,
+        reply: fuser::ReplyWrite,
+    ) {
+        debug!(
+            "write(ino: {:#x?}, fh: {}, offset: {}, data.len(): {}, \
+            write_flags: {:#x?}, flags: {:#x?}, lock_owner: {:?})",
+            ino,
+            fh,
+            offset,
+            data.len(),
+            write_flags,
+            flags,
+            lock_owner
+        );
+        let file = self.file_handles.get_mut(&ino);
+        if let Some(handle) = file {
+            // Without encryption for now
+            if let Ok(written) = handle.write(data) {
+                reply.written(written as u32)
+            } else {
+                reply.error(EUNKNOWN)
+            };
+        } else {
+            reply.error(EUNKNOWN);
+        }
+    }
+
+    fn getattr(&mut self, _req: &fuser::Request<'_>, ino: u64, reply: fuser::ReplyAttr) {
+        let result = self
+            .rt
+            .block_on(async { self.db.get_node_by_id(ino).await });
+        let node = result.unwrap_or(None);
+        if let Some(node) = node {
+            if let Ok(attrs) = attrs_from_node(&node) {
+                reply.attr(&Duration::from_millis(64), &attrs);
+            } else {
+                reply.error(EUNKNOWN)
+            }
+        } else {
+            reply.error(ENOENT)
+        };
+    }
+
+    fn release(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        ino: u64,
+        _fh: u64,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        _flush: bool,
+        reply: fuser::ReplyEmpty,
+    ) {
+        if let Some(file) = self.file_handles.get_mut(&ino) {
+            match file.flush() {
+                Ok(_) => reply.ok(),
+                Err(_) => reply.error(EUNKNOWN),
+            }
+        } else {
+            reply.error(ENOENT)
+        }
     }
 }
 

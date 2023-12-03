@@ -11,3 +11,9 @@ pub enum ClientError {
     #[error("Request error: {0}")]
     RequestValue(String),
 }
+
+impl From<ClientError> for std::io::Error {
+    fn from(value: ClientError) -> Self {
+        std::io::Error::new(std::io::ErrorKind::Other, value)
+    }
+}

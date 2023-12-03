@@ -1,90 +1,15 @@
-use async_trait::async_trait;
+use std::env;
+
 use log::{debug, error};
-use reqwest::{
-    header::{self},
-    multipart::{self},
-    ClientBuilder, StatusCode,
-};
+use reqwest::{header, multipart, ClientBuilder, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::local::db::FsNode;
+use crate::client::error::ClientError;
 
-use super::{
-    client::{CloudClient, CloudFile},
-    error::ClientError,
-};
-use std::{
-    env,
-    io::{Read, Write},
-    sync::Arc,
-};
-
-const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
-/// Virtual file hosted on Discord
-pub struct DiscordFile {
-    buffer: Vec<u8>,
-    buf_size: usize,
-    node: FsNode,
-    prev_id: Option<String>,
-    client: Arc<DiscordNetClient>,
-}
-
-impl DiscordFile {
-    pub fn new(client: Arc<DiscordNetClient>, node: FsNode) -> Self {
-        DiscordFile {
-            buffer: vec![0; DISCORD_BLOCK_SIZE],
-            buf_size: 0,
-            node,
-            prev_id: None,
-            client,
-        }
-    }
-}
-
-impl CloudFile for DiscordFile {
-    fn node(&self) -> &crate::local::db::FsNode {
-        &self.node
-    }
-}
-
-impl Read for DiscordFile {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let _buf_size = buf.len();
-        todo!()
-    }
-}
-
-impl Write for DiscordFile {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let buf_size = buf.len();
-        let total_buf_size = self.buf_size + buf_size;
-        // Need to upload a block
-        if total_buf_size > DISCORD_BLOCK_SIZE {
-            let slice = &buf[..DISCORD_BLOCK_SIZE - &self.buffer.len()];
-            slice.iter().for_each(|b| self.buffer.push(*b));
-        } else {
-            buf.iter().for_each(|b| self.buffer.push(*b));
-        }
-        todo!()
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        todo!()
-    }
-}
-
-/// Virtual file host
-pub struct DiscordClient {
-    net_client: Arc<DiscordNetClient>,
-}
-
-impl DiscordClient {
-    pub fn new() -> Result<Self, ClientError> {
-        Ok(Self {
-            net_client: Arc::new(DiscordNetClient::new()?),
-        })
-    }
+#[derive(Debug, Deserialize)]
+struct DiscordMessage {
+    id: String,
 }
 
 pub struct DiscordNetClient {
@@ -166,20 +91,10 @@ impl DiscordNetClient {
     }
 }
 
-#[async_trait]
-impl CloudClient for DiscordClient {
-    async fn create_file(&self, node: FsNode) -> Box<dyn CloudFile> {
-        Box::new(DiscordFile::new(self.net_client.clone(), node))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct DiscordMessage {
-    id: String,
-}
-
 #[cfg(test)]
 mod test {
+    use crate::client::discord::file::DISCORD_BLOCK_SIZE;
+
     use super::*;
 
     fn init() {

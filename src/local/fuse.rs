@@ -6,7 +6,7 @@ use log::debug;
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
-    client::{client::CloudClient, discord::DiscordClient},
+    client::{client::CloudClient, discord::client::DiscordClient},
     local::{db::FsNode, error::DbError},
     util::fs::attrs_from_node,
 };

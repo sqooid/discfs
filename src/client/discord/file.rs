@@ -6,15 +6,16 @@ use std::{
 use log::error;
 
 use crate::{
-    client::{client::CloudFile, error::ClientError},
+    client::error::ClientError,
     local::db::{FsDatabase, FsNode},
 };
 
 use super::net::DiscordNetClient;
 
 pub const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
+
 /// Virtual file hosted on Discord
-pub struct DiscordFile {
+pub struct DiscordFileWrite {
     buffer: Vec<u8>,
     total_size: i64,
     node: FsNode,
@@ -23,9 +24,9 @@ pub struct DiscordFile {
     db: Arc<FsDatabase>,
 }
 
-impl DiscordFile {
+impl DiscordFileWrite {
     pub fn new(client: Arc<DiscordNetClient>, db: Arc<FsDatabase>, node: FsNode) -> Self {
-        DiscordFile {
+        DiscordFileWrite {
             buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
             total_size: 0,
             node,
@@ -48,20 +49,7 @@ impl DiscordFile {
     }
 }
 
-impl CloudFile for DiscordFile {
-    fn node(&self) -> &crate::local::db::FsNode {
-        &self.node
-    }
-}
-
-impl Read for DiscordFile {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let _buf_size = buf.len();
-        todo!()
-    }
-}
-
-impl Write for DiscordFile {
+impl Write for DiscordFileWrite {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.total_size += buf.len() as i64;
 
@@ -94,5 +82,29 @@ impl Write for DiscordFile {
             })?;
         }
         Ok(())
+    }
+}
+
+pub struct DiscordFileRead {
+    buffer: Vec<u8>,
+    node: FsNode,
+    client: Arc<DiscordNetClient>,
+    file_ids: Vec<u64>,
+}
+
+impl DiscordFileRead {
+    pub fn new(client: Arc<DiscordNetClient>, db: Arc<FsDatabase>, node: FsNode) -> Self {
+        Self {
+            node,
+            client,
+            file_ids: vec![],
+            buffer: vec![],
+        }
+    }
+}
+
+impl std::io::Read for DiscordFileRead {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        todo!()
     }
 }

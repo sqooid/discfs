@@ -112,8 +112,10 @@ impl DiscordNetClient {
         Ok(body.id)
     }
 
-    async fn get_file_chain(&self, end_id: &str) -> Result<Vec<String>, ClientError> {
-        todo!()
+    async fn get_file_chain(&self, end_id: &str) -> Result<Vec<u64>, ClientError> {
+        let reverse_ids = vec![u64::from_str_radix(end_id, 10)?];
+
+        Ok(reverse_ids.into_iter().rev().collect())
     }
 }
 

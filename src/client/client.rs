@@ -6,11 +6,7 @@ use crate::local::db::FsNode;
 
 use super::error::ClientError;
 
-pub trait CloudFile: Read + Write {
-    fn node(&self) -> &FsNode;
-}
-
 #[async_trait]
 pub trait CloudClient {
-    fn create_file(&self, node: FsNode) -> Box<dyn CloudFile>;
+    fn create_file(&self, node: FsNode) -> Box<dyn Write>;
 }

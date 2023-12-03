@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    io::Write,
     result,
     sync::Arc,
     time::Duration,
@@ -11,10 +12,7 @@ use log::{debug, error};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
-    client::{
-        client::{CloudClient, CloudFile},
-        discord::client::DiscordClient,
-    },
+    client::{client::CloudClient, discord::client::DiscordClient},
     local::{db::FsNode, error::DbError},
     util::fs::attrs_from_node,
 };
@@ -28,7 +26,8 @@ pub struct DiscFs {
     ctype: CloudType,
     client: Arc<dyn CloudClient>,
     rt: Handle,
-    file_handles: HashMap<u64, Box<dyn CloudFile>>,
+    write_handles: HashMap<u64, Box<dyn std::io::Write>>,
+    read_handles: HashMap<u64, Box<dyn std::io::Read>>,
     started_dirs: HashSet<u64>,
 }
 
@@ -42,7 +41,8 @@ impl DiscFs {
             }),
             rt,
             ctype,
-            file_handles: HashMap::new(),
+            write_handles: HashMap::new(),
+            read_handles: HashMap::new(),
             started_dirs: HashSet::new(),
         })
     }
@@ -152,7 +152,7 @@ impl Filesystem for DiscFs {
             Ok(n) => match n {
                 Some(n) => {
                     let file = self.client.create_file(n.clone());
-                    self.file_handles.insert(n.id as u64, file);
+                    self.write_handles.insert(n.id as u64, file);
                     reply.opened(0, 0b111111111)
                 }
                 None => reply.error(ENOENT),
@@ -184,7 +184,7 @@ impl Filesystem for DiscFs {
             flags,
             lock_owner
         );
-        let file = self.file_handles.get_mut(&ino);
+        let file = self.write_handles.get_mut(&ino);
         if let Some(handle) = file {
             // Without encryption for now
             if let Ok(written) = handle.write(data) {
@@ -223,7 +223,7 @@ impl Filesystem for DiscFs {
         _flush: bool,
         reply: fuser::ReplyEmpty,
     ) {
-        if let Some(file) = self.file_handles.get_mut(&ino) {
+        if let Some(file) = self.write_handles.get_mut(&ino) {
             match file.flush() {
                 Ok(_) => reply.ok(),
                 Err(_) => reply.error(EUNKNOWN),

@@ -8,6 +8,8 @@ repository = "https://github.com/sqooid/discfs"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+exclude = [".vscode/", "arch/", ".env*", "flake.*"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

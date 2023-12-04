@@ -38,25 +38,9 @@ impl FsDatabase {
 
     async fn initialise_db(connection: &Pool<Sqlite>) -> Result<(), DbError> {
         info!("initializing database for the first time");
-        let _ = sqlx::query(
-            "
-create table node (
-    id integer primary key,
-    name text,
-    size integer,
-    ctime float,
-    atime float,
-    parent integer,
-    directory boolean,
-    cloud_id text,
-    foreign key(parent) references node(id)
-); 
-
-insert into node (id, name, parent) values (1, null, null);
-            ",
-        )
-        .execute(connection)
-        .await?;
+        let _ = sqlx::query(include_str!("create_schema.sql"))
+            .execute(connection)
+            .await?;
 
         Ok(())
     }

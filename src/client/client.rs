@@ -2,20 +2,12 @@ use std::io::{Read, Write};
 
 use async_trait::async_trait;
 
-use crate::local::db::FsNode;
+use crate::local::{db::FsNode, error::FsError};
 
 use super::error::ClientError;
 
-pub trait CloudFile: Read + Write {
-    fn node(&self) -> &FsNode;
-}
-
 #[async_trait]
 pub trait CloudClient {
-    async fn create_message(
-        &self,
-        channel_id: &str,
-        file: &[u8],
-        reply_id: Option<&str>,
-    ) -> Result<String, ClientError>;
+    fn open_file_write(&self, node: FsNode) -> Box<dyn Write>;
+    fn open_file_read(&self, node: FsNode) -> Result<Box<dyn Read>, FsError>;
 }

@@ -19,7 +19,11 @@ pub fn attrs_from_node(node: &FsNode) -> Result<FileAttr, FsError> {
         } else {
             FileType::RegularFile
         },
-        perm: 0b111111111,
+        perm: if node.directory {
+            0b111111111
+        } else {
+            0b100100100
+        },
         nlink: 1,
         uid: 0,
         gid: 0,

@@ -1,7 +1,9 @@
-use std::{ffi::OsStr, str::FromStr};
+use std::{ffi::OsStr, str::FromStr, time::SystemTime};
 
 use log::info;
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};
+
+use crate::util::time::time_to_float;
 
 use super::error::DbError;
 
@@ -72,6 +74,13 @@ insert into node (id, name, parent) values (1, null, null);
         .await?;
         Ok(node)
     }
+    pub async fn get_node_by_id(&self, id: u64) -> Result<Option<FsNode>, DbError> {
+        let id = id as i64;
+        let node = sqlx::query_as!(FsNode, "select * from node where id=?", id)
+            .fetch_optional(&self.connection)
+            .await?;
+        Ok(node)
+    }
 
     pub async fn create_node(
         &self,
@@ -92,12 +101,14 @@ insert into node (id, name, parent) values (1, null, null);
         if let Some(node) = node {
             return Err(DbError::Exists(node.id, name.to_string()));
         }
+        let ctime = time_to_float(&SystemTime::now()).map_err(|e| DbError::Other(e.to_string()))?;
         let new_node = sqlx::query_as!(
             FsNode,
-            "insert into node (parent, name, directory) values (?, ?, ?); select * from node where parent=? and name=?",
+            "insert into node (parent, name, directory, ctime) values (?, ?, ?, ?); select * from node where parent=? and name=?",
             parent_id,
             name,
             directory,
+            ctime,
             parent_id,
             name,
         )
@@ -106,8 +117,37 @@ insert into node (id, name, parent) values (1, null, null);
 
         Ok(new_node)
     }
+
+    pub async fn set_node_cloud_id(
+        &self,
+        id: &i64,
+        cloud_id: &str,
+        size: i64,
+    ) -> Result<(), DbError> {
+        let result = sqlx::query!(
+            "update node set cloud_id=?, size=? where id=?",
+            cloud_id,
+            size,
+            id,
+        )
+        .execute(&self.connection)
+        .await?;
+        if result.rows_affected() == 0 {
+            Err(DbError::DoesNotExist(*id))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn get_nodes_by_parent(&self, parent_id: i64) -> Result<Vec<FsNode>, DbError> {
+        let result = sqlx::query_as!(FsNode, "select * from node where parent=?", parent_id)
+            .fetch_all(&self.connection)
+            .await?;
+        Ok(result)
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct FsNode {
     pub id: i64,
     pub name: Option<String>,

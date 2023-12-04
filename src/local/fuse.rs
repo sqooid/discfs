@@ -246,9 +246,12 @@ impl Filesystem for DiscFs {
         reply: fuser::ReplyEmpty,
     ) {
         if Self::is_write(flags) {
-            if let Some(file) = self.write_handles.get_mut(&ino) {
-                match file.flush() {
-                    Ok(_) => reply.ok(),
+            if let Some(handle) = self.write_handles.get_mut(&ino) {
+                match handle.flush() {
+                    Ok(_) => {
+                        handle.finish();
+                        reply.ok()
+                    }
                     Err(_) => reply.error(EUNKNOWN),
                 }
                 self.write_handles.remove(&ino);

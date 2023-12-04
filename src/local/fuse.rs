@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    io::Write,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, io::Write, sync::Arc, time::Duration};
 
 use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, ENOENT};
@@ -38,7 +33,6 @@ pub struct DiscFs {
     rt: Handle,
     write_handles: HashMap<u64, Box<dyn CloudWrite>>,
     read_handles: HashMap<u64, Box<dyn CloudRead>>,
-    started_dirs: HashSet<u64>,
 }
 
 impl DiscFs {
@@ -52,7 +46,6 @@ impl DiscFs {
             rt,
             write_handles: HashMap::new(),
             read_handles: HashMap::new(),
-            started_dirs: HashSet::new(),
         })
     }
 }
@@ -275,12 +268,6 @@ impl Filesystem for DiscFs {
         offset: i64,
         mut reply: fuser::ReplyDirectory,
     ) {
-        if self.started_dirs.contains(&ino) {
-            self.started_dirs.remove(&ino);
-            reply.ok();
-            debug!("readdir done");
-            return;
-        }
         debug!("readdir ino: {:?} offset: {:?}", ino, offset);
         let result = self
             .rt
@@ -303,7 +290,6 @@ impl Filesystem for DiscFs {
                 );
                 i += 1;
             }
-            self.started_dirs.insert(ino);
             reply.ok();
         } else {
             reply.error(EUNKNOWN);

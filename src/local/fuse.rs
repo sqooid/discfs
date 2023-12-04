@@ -166,13 +166,13 @@ impl Filesystem for DiscFs {
                             "create file: {}",
                             n.name.as_ref().unwrap_or(&"".to_string())
                         );
-                        let file = self.client.open_file_write(n.clone());
-                        self.write_handles.insert(n.id as u64, file);
+                        let file = self.client.open_file_write(n);
+                        self.write_handles.insert(ino, file);
                         reply.opened(0, 0);
                     } else {
-                        if let Ok(file) = self.client.open_file_read(n.clone()) {
-                            info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
-                            self.read_handles.insert(n.id as u64, file);
+                        info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
+                        if let Ok(file) = self.client.open_file_read(n) {
+                            self.read_handles.insert(ino, file);
                             reply.opened(0, 0);
                         } else {
                             reply.error(EUNKNOWN);

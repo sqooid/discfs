@@ -8,11 +8,14 @@ use std::{
 
 use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, EIO, ENOENT, ENONET, ENOSYS};
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
 use crate::{
-    client::{client::CloudClient, discord::client::DiscordClient},
+    client::{
+        client::{CloudClient, CloudRead, CloudWrite},
+        discord::client::DiscordClient,
+    },
     local::{db::FsNode, error::DbError},
     util::fs::attrs_from_node,
 };
@@ -21,21 +24,21 @@ use super::{db::FsDatabase, error::FsError};
 
 const EUNKNOWN: c_int = 99;
 
-const FOPEN_DIRECT_IO: u32 = 1 << 0;
-const FOPEN_KEEP_CACHE: u32 = 1 << 1;
-const FOPEN_NONSEEKABLE: u32 = 1 << 2;
-const FOPEN_CACHE_DIR: u32 = 1 << 3;
-const FOPEN_STREAM: u32 = 1 << 4;
-const FOPEN_NOFLUSH: u32 = 1 << 5;
-const FOPEN_PARALLEL_DIRECT_WRITES: u32 = 1 << 6;
+// Unused open flags
+// const FOPEN_DIRECT_IO: u32 = 1 << 0;
+// const FOPEN_KEEP_CACHE: u32 = 1 << 1;
+// const FOPEN_NONSEEKABLE: u32 = 1 << 2;
+// const FOPEN_CACHE_DIR: u32 = 1 << 3;
+// const FOPEN_STREAM: u32 = 1 << 4;
+// const FOPEN_NOFLUSH: u32 = 1 << 5;
+// const FOPEN_PARALLEL_DIRECT_WRITES: u32 = 1 << 6;
 
 pub struct DiscFs {
     db: Arc<FsDatabase>,
-    ctype: CloudType,
     client: Arc<dyn CloudClient>,
     rt: Handle,
-    write_handles: HashMap<u64, Box<dyn std::io::Write>>,
-    read_handles: HashMap<u64, Box<dyn std::io::Read>>,
+    write_handles: HashMap<u64, Box<dyn CloudWrite>>,
+    read_handles: HashMap<u64, Box<dyn CloudRead>>,
     started_dirs: HashSet<u64>,
 }
 
@@ -48,7 +51,6 @@ impl DiscFs {
                 CloudType::Discord => DiscordClient::new(rt.clone(), db)?,
             }),
             rt,
-            ctype,
             write_handles: HashMap::new(),
             read_handles: HashMap::new(),
             started_dirs: HashSet::new(),
@@ -99,6 +101,7 @@ impl Filesystem for DiscFs {
             "mkdir(parent: {:#x?}, name: {:?}, mode: {}, umask: {:#x?})",
             parent, name, mode, umask
         );
+        info!("create directory: {:?}", name);
         let db = Arc::clone(&self.db);
         let name = name.to_owned();
         let node = self
@@ -160,11 +163,16 @@ impl Filesystem for DiscFs {
             Ok(n) => match n {
                 Some(n) => {
                     if flags & 1 != 0 {
+                        info!(
+                            "create file: {}",
+                            n.name.as_ref().unwrap_or(&"".to_string())
+                        );
                         let file = self.client.open_file_write(n.clone());
                         self.write_handles.insert(n.id as u64, file);
                         reply.opened(0, 0);
                     } else {
                         if let Ok(file) = self.client.open_file_read(n.clone()) {
+                            info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
                             self.read_handles.insert(n.id as u64, file);
                             reply.opened(0, 0);
                         } else {
@@ -251,7 +259,8 @@ impl Filesystem for DiscFs {
                 reply.error(ENOENT)
             }
         } else {
-            if let Some(_handle) = self.read_handles.remove(&ino) {
+            if let Some(handle) = self.read_handles.remove(&ino) {
+                handle.finish();
                 reply.ok();
             } else {
                 reply.error(ENOENT);

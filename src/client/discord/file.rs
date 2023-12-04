@@ -2,12 +2,16 @@ use std::{
     cmp::min,
     io::{Read, Write},
     sync::Arc,
+    time::SystemTime,
 };
 
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 
 use crate::{
-    client::error::ClientError,
+    client::{
+        client::{CloudRead, CloudWrite},
+        error::ClientError,
+    },
     local::{
         db::{FsDatabase, FsNode},
         error::FsError,
@@ -26,6 +30,7 @@ pub struct DiscordFileWrite {
     prev_id: Option<String>,
     client: Arc<DiscordNetClient>,
     db: Arc<FsDatabase>,
+    open_time: SystemTime,
 }
 
 impl DiscordFileWrite {
@@ -37,6 +42,7 @@ impl DiscordFileWrite {
             prev_id: None,
             client,
             db,
+            open_time: SystemTime::now(),
         }
     }
 
@@ -50,6 +56,18 @@ impl DiscordFileWrite {
                 )
                 .await
         })
+    }
+}
+
+impl CloudWrite for DiscordFileWrite {
+    fn finish(&self) -> () {
+        let time = self.open_time.elapsed().unwrap_or_default().as_secs_f64();
+        info!(
+            "wrote {} bytes in {}s ({} MiB/s)",
+            self.total_size,
+            time,
+            self.total_size as f64 / (1024.0 * 1024.0 * time)
+        );
     }
 }
 
@@ -95,6 +113,8 @@ pub struct DiscordFileRead {
     client: Arc<DiscordNetClient>,
     file_ids: Vec<u64>,
     current_index: usize,
+    open_time: SystemTime,
+    total_size: u64,
 }
 
 impl DiscordFileRead {
@@ -117,7 +137,21 @@ impl DiscordFileRead {
             file_ids: ids?,
             buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
             current_index: 0,
+            open_time: SystemTime::now(),
+            total_size: 0,
         })
+    }
+}
+
+impl CloudRead for DiscordFileRead {
+    fn finish(&self) -> () {
+        let time = self.open_time.elapsed().unwrap_or_default().as_secs_f64();
+        info!(
+            "read {} bytes in {}s ({} MiB/s)",
+            self.total_size,
+            time,
+            self.total_size as f64 / (1024.0 * 1024.0 * time)
+        );
     }
 }
 
@@ -139,6 +173,7 @@ impl std::io::Read for DiscordFileRead {
                 let leftover = self.buffer[copy_size..].to_vec();
                 self.buffer.clear();
                 self.buffer.clone_from(&leftover);
+                self.total_size += copy_size as u64;
                 return Ok(copy_size);
             }
 
@@ -176,6 +211,7 @@ impl std::io::Read for DiscordFileRead {
             self.current_index += 1;
         }
 
+        self.total_size += copied as u64;
         Ok(copied)
     }
 }

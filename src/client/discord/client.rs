@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use tokio::runtime::Handle;
 
 use crate::{
-    client::{client::CloudClient, error::ClientError},
+    client::{
+        client::{CloudClient, CloudRead, CloudWrite},
+        error::ClientError,
+    },
     local::{
         db::{FsDatabase, FsNode},
         error::FsError,
@@ -36,14 +39,14 @@ impl DiscordClient {
 
 #[async_trait]
 impl CloudClient for DiscordClient {
-    fn open_file_write(&self, node: FsNode) -> Box<dyn Write> {
+    fn open_file_write(&self, node: FsNode) -> Box<dyn CloudWrite> {
         Box::new(DiscordFileWrite::new(
             self.net_client.clone(),
             self.db.clone(),
             node,
         ))
     }
-    fn open_file_read(&self, node: FsNode) -> Result<Box<dyn Read>, FsError> {
+    fn open_file_read(&self, node: FsNode) -> Result<Box<dyn CloudRead>, FsError> {
         Ok(Box::new(DiscordFileRead::new(
             self.net_client.clone(),
             node,

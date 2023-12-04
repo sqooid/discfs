@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "insert into node (parent, name, directory, ctime) values (?, ?, ?, ?); select * from node where parent=? and name=?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "size",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "ctime",
+        "ordinal": 3,
+        "type_info": "Float"
+      },
+      {
+        "name": "atime",
+        "ordinal": 4,
+        "type_info": "Float"
+      },
+      {
+        "name": "parent",
+        "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "directory",
+        "ordinal": 6,
+        "type_info": "Bool"
+      },
+      {
+        "name": "cloud_id",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "1e708297f41e1124a04332bdb526fb6956206818e3f55474eb6f3b88dffad36c"
+}

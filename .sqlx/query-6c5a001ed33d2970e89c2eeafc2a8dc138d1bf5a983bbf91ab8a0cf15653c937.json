@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "delete from node where parent=? and name=? and directory=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6c5a001ed33d2970e89c2eeafc2a8dc138d1bf5a983bbf91ab8a0cf15653c937"
+}

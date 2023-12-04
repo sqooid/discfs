@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update node set parent=?, name=? where parent=? and name=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "01259b2f696648f4d8b802be88a54e4f219abcc61897c3d2e766e62b1f1f7556"
+}

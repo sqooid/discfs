@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update node set cloud_id=?, size=? where id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8a8bae7794140f2575ceae8303da9deb75aaf41e21b436d11771576536dcfb8c"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select name from sqlite_master where type='table' and name='node'",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a42385ab00e71585b033af80d4fd41bfe903febce4ad36faed88a31b7372fd85"
+}

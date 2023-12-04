@@ -10,6 +10,7 @@ pub struct Cli {
     #[arg(long)]
     pub dotenv: bool,
 
+    /// Logging verbosity. Repeat multiple times to increase logging level
     #[arg(short, action = ArgAction::Count)]
     pub verbosity: u8,
 

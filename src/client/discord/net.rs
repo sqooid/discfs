@@ -62,9 +62,10 @@ impl DiscordNetClient {
             .map_err(|e| ClientError::Initialization(e.to_string()))?;
 
         return Ok(Self {
-            url: env::var("DISCORD_URL").map_err(|e| ClientError::Initialization(e.to_string()))?,
+            url: env::var("DISCORD_URL")
+                .unwrap_or_else(|_| "https://discord.com/api/v10".to_string()),
             files_url: env::var("DISCORD_FILES_URL")
-                .map_err(|e| ClientError::Initialization(e.to_string()))?,
+                .unwrap_or_else(|_| "https://cdn.discordapp.com/attachments".to_string()),
             client: discord_client,
             channel_id: env::var("CHANNEL_ID")
                 .map_err(|e| ClientError::Initialization(e.to_string()))?,

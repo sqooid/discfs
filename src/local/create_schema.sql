@@ -7,7 +7,7 @@ create table node (
     parent integer,
     directory boolean not null,
     cloud_id text,
-    foreign key(parent) references node(id)
+    foreign key(parent) references node(id) on delete cascade
 ); 
 
 insert into node (id, name, parent, directory) values (1, null, null, true);

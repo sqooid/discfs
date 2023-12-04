@@ -318,6 +318,29 @@ impl Filesystem for DiscFs {
             reply.error(ENOENT);
         }
     }
+
+    fn rmdir(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
+        let result = self.rt.block_on(async {
+            self.db
+                .delete_node(parent as i64, &name.to_string_lossy())
+                .await
+        });
+        if let Ok(deleted) = result {
+            if deleted == 0 {
+                reply.error(ENOENT);
+            } else {
+                reply.ok();
+            }
+        } else {
+            reply.error(EUNKNOWN);
+        }
+    }
 }
 
 pub enum CloudType {

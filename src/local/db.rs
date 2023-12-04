@@ -145,6 +145,17 @@ insert into node (id, name, parent) values (1, null, null);
             .await?;
         Ok(result)
     }
+
+    pub async fn delete_node(&self, parent_id: i64, name: &str) -> Result<u64, DbError> {
+        let result = sqlx::query!(
+            "delete from node where parent=? and name=? and directory=1",
+            parent_id,
+            name
+        )
+        .execute(&self.connection)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 #[derive(Debug, Clone)]

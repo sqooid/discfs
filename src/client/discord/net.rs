@@ -3,7 +3,7 @@ use std::env;
 use log::{debug, error, trace};
 use reqwest::{header, multipart, ClientBuilder, StatusCode};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, to_string_pretty};
+use serde_json::json;
 use tokio::runtime::Handle;
 
 use crate::client::error::ClientError;
@@ -189,24 +189,18 @@ impl DiscordNetClient {
 
 #[cfg(test)]
 mod test {
-    use crate::client::discord::file::DISCORD_BLOCK_SIZE;
-
     use super::*;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    // #[tokio::test]
+    #[tokio::test]
     async fn test_create_message() {
         init();
         let client = DiscordNetClient::new(Handle::current()).unwrap();
         let result = client
-            .create_message(
-                &env::var("CHANNEL_ID").unwrap(),
-                &vec![0; DISCORD_BLOCK_SIZE],
-                &None,
-            )
+            .create_message(&env::var("CHANNEL_ID").unwrap(), &vec![0; 6], &None)
             .await;
         result.unwrap();
     }
@@ -226,7 +220,7 @@ mod test {
         init();
         let client = DiscordNetClient::new(Handle::current()).unwrap();
         let mut buffer: Vec<u8> = vec![];
-        let result = client
+        let _result = client
             .download_file(
                 &env::var("CHANNEL_ID").unwrap(),
                 "1180822826329055292",

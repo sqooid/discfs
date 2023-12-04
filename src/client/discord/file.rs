@@ -1,11 +1,6 @@
-use std::{
-    cmp::min,
-    io::{Read, Write},
-    sync::Arc,
-    time::SystemTime,
-};
+use std::{cmp::min, io::Write, sync::Arc, time::SystemTime};
 
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 
 use crate::{
     client::{
@@ -109,7 +104,6 @@ impl Write for DiscordFileWrite {
 
 pub struct DiscordFileRead {
     buffer: Vec<u8>,
-    node: FsNode,
     client: Arc<DiscordNetClient>,
     file_ids: Vec<u64>,
     current_index: usize,
@@ -132,7 +126,6 @@ impl DiscordFileRead {
         });
         debug!("file ids: {:?}", ids);
         Ok(Self {
-            node,
             client,
             file_ids: ids?,
             buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),

@@ -1,22 +1,21 @@
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
-    result,
     sync::Arc,
     time::Duration,
 };
 
 use fuser::{FileType, Filesystem};
-use libc::{c_int, EEXIST, EIO, ENOENT, ENONET, ENOSYS};
-use log::{debug, error, info, trace};
-use tokio::{runtime::Handle, spawn, task::JoinHandle};
+use libc::{c_int, EEXIST, ENOENT};
+use log::{debug, error, info};
+use tokio::{runtime::Handle};
 
 use crate::{
     client::{
         client::{CloudClient, CloudRead, CloudWrite},
         discord::client::DiscordClient,
     },
-    local::{db::FsNode, error::DbError},
+    local::{error::DbError},
     util::fs::attrs_from_node,
 };
 

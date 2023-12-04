@@ -189,44 +189,45 @@ impl DiscordNetClient {
 
 #[cfg(test)]
 mod test {
+    use std::error::Error;
+
     use super::*;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
+    type TestResult = Result<(), Box<dyn Error>>;
 
     #[tokio::test]
-    async fn test_create_message() {
+    async fn test_create_message() -> TestResult {
         init();
-        let client = DiscordNetClient::new(Handle::current()).unwrap();
-        let result = client
-            .create_message(&env::var("CHANNEL_ID").unwrap(), &vec![0; 6], &None)
+        let client = DiscordNetClient::new(Handle::current())?;
+        let _result = client
+            .create_message(&env::var("CHANNEL_ID")?, &vec![0; 6], &None)
             .await;
-        result.unwrap();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_chain() {
+    async fn test_get_chain() -> TestResult {
         init();
-        let client = DiscordNetClient::new(Handle::current()).unwrap();
+        let client = DiscordNetClient::new(Handle::current())?;
         let result = client
-            .get_file_chain(&env::var("CHANNEL_ID").unwrap(), "1180822826584912006")
+            .get_file_chain(&env::var("CHANNEL_ID")?, "1180822826584912006")
             .await;
-        debug!("chain: {:?}", result.unwrap());
+        debug!("chain: {:?}", result?);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_download() {
+    async fn test_download() -> TestResult {
         init();
-        let client = DiscordNetClient::new(Handle::current()).unwrap();
+        let client = DiscordNetClient::new(Handle::current())?;
         let mut buffer: Vec<u8> = vec![];
         let _result = client
-            .download_file(
-                &env::var("CHANNEL_ID").unwrap(),
-                "1180822826329055292",
-                &mut buffer,
-            )
+            .download_file(&env::var("CHANNEL_ID")?, "1180822826329055292", &mut buffer)
             .await;
         debug!("downloaded: {:?}", buffer.len());
+        Ok(())
     }
 }

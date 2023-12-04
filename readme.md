@@ -6,6 +6,8 @@ Store files as attachments on Discord messages.
 
 Install with `cargo install discfs` or using the Nix flake in the project repository.
 
+Note that you will need development libraries `fuse3-dev`, `openssl-dev` and `pkg-config` or whatever they are called in your package manager.
+
 # Setup
 
 ## Creating the Discord bot

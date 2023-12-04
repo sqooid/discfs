@@ -19,7 +19,6 @@
         (system:
           let
             pkgs = pkgsFor."${system}";
-            manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
             craneLib = crane.lib.${system};
             sqlFilter = path: _type: null != builtins.match ".*\.sql.*" path;
             sqlOrCargo = path: type: (sqlFilter path type) || (craneLib.filterCargoSources path type);

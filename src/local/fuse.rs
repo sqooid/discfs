@@ -345,13 +345,38 @@ impl Filesystem for DiscFs {
     ) {
         let result = self.rt.block_on(async {
             self.db
-                .delete_dir(parent as i64, &name.to_string_lossy())
+                .delete_node(parent as i64, &name.to_string_lossy(), true)
                 .await
         });
         if let Ok(deleted) = result {
             if deleted == 0 {
                 reply.error(ENOENT);
             } else {
+                info!("deleted directory: {:?}", name);
+                reply.ok();
+            }
+        } else {
+            reply.error(EUNKNOWN);
+        }
+    }
+
+    fn unlink(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
+        let result = self.rt.block_on(async {
+            self.db
+                .delete_node(parent as i64, &name.to_string_lossy(), false)
+                .await
+        });
+        if let Ok(deleted) = result {
+            if deleted == 0 {
+                reply.error(ENOENT);
+            } else {
+                info!("deleted file: {:?}", name);
                 reply.ok();
             }
         } else {
@@ -366,7 +391,7 @@ impl Filesystem for DiscFs {
         name: &std::ffi::OsStr,
         newparent: u64,
         newname: &std::ffi::OsStr,
-        flags: u32,
+        _flags: u32,
         reply: fuser::ReplyEmpty,
     ) {
         let result = self.rt.block_on(async {

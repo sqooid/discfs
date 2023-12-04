@@ -134,6 +134,12 @@ impl Filesystem for DiscFs {
             umask: {:#x?}, rdev: {})",
             parent, name, mode, umask, rdev
         );
+        // Block creation of Zone.Identifier files from Windows cause that shit's annoying
+        if name.to_string_lossy().ends_with("Zone.Identifier") {
+            reply.error(EUNKNOWN);
+            return;
+        }
+
         let node = self
             .rt
             .block_on(async { self.db.create_node(parent, name, false).await });

@@ -328,7 +328,7 @@ impl Filesystem for DiscFs {
     ) {
         let result = self.rt.block_on(async {
             self.db
-                .delete_node(parent as i64, &name.to_string_lossy())
+                .delete_dir(parent as i64, &name.to_string_lossy())
                 .await
         });
         if let Ok(deleted) = result {

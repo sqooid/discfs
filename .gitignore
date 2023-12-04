@@ -2,6 +2,7 @@
 .direnv
 .env*
 *.db
+result
 .flaskenv*
 !.env.project
 !.env.vault

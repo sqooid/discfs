@@ -7,7 +7,7 @@ use std::{
 };
 
 use fuser::{FileType, Filesystem};
-use libc::{c_int, EEXIST, EIO, ENOENT, ENOSYS};
+use libc::{c_int, EEXIST, EIO, ENOENT, ENONET, ENOSYS};
 use log::{debug, error, trace};
 use tokio::{runtime::Handle, spawn, task::JoinHandle};
 
@@ -20,6 +20,14 @@ use crate::{
 use super::{db::FsDatabase, error::FsError};
 
 const EUNKNOWN: c_int = 99;
+
+const FOPEN_DIRECT_IO: u32 = 1 << 0;
+const FOPEN_KEEP_CACHE: u32 = 1 << 1;
+const FOPEN_NONSEEKABLE: u32 = 1 << 2;
+const FOPEN_CACHE_DIR: u32 = 1 << 3;
+const FOPEN_STREAM: u32 = 1 << 4;
+const FOPEN_NOFLUSH: u32 = 1 << 5;
+const FOPEN_PARALLEL_DIRECT_WRITES: u32 = 1 << 6;
 
 pub struct DiscFs {
     db: Arc<FsDatabase>,
@@ -154,11 +162,11 @@ impl Filesystem for DiscFs {
                     if flags & 1 != 0 {
                         let file = self.client.open_file_write(n.clone());
                         self.write_handles.insert(n.id as u64, file);
-                        reply.opened(0, 0b110110110)
+                        reply.opened(0, 0);
                     } else {
                         if let Ok(file) = self.client.open_file_read(n.clone()) {
                             self.read_handles.insert(n.id as u64, file);
-                            reply.opened(0, 0b100100100)
+                            reply.opened(0, 0);
                         } else {
                             reply.error(EUNKNOWN);
                         }
@@ -339,6 +347,33 @@ impl Filesystem for DiscFs {
             }
         } else {
             reply.error(EUNKNOWN);
+        }
+    }
+
+    fn rename(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        newparent: u64,
+        newname: &std::ffi::OsStr,
+        flags: u32,
+        reply: fuser::ReplyEmpty,
+    ) {
+        let result = self.rt.block_on(async {
+            self.db
+                .move_node(
+                    parent as i64,
+                    &name.to_string_lossy(),
+                    newparent as i64,
+                    &newname.to_string_lossy(),
+                )
+                .await
+        });
+        match result {
+            Ok(_) => reply.ok(),
+            Err(DbError::DoesNotExist(_)) => reply.error(ENOENT),
+            Err(_) => reply.error(EUNKNOWN),
         }
     }
 }

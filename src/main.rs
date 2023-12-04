@@ -38,6 +38,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         MountOption::NoExec,
         MountOption::AllowRoot,
         MountOption::AutoUnmount,
+        MountOption::DefaultPermissions,
+        MountOption::Async,
     ];
     let _ = fuser::mount2(fs, cli.mountpoint, &mount_options);
 

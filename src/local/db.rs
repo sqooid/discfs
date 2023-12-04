@@ -156,6 +156,29 @@ insert into node (id, name, parent) values (1, null, null);
         .await?;
         Ok(result.rows_affected())
     }
+
+    pub async fn move_node(
+        &self,
+        parent: i64,
+        name: &str,
+        new_parent: i64,
+        new_name: &str,
+    ) -> Result<(), DbError> {
+        let result = sqlx::query!(
+            "update node set parent=?, name=? where parent=? and name=?",
+            new_parent,
+            new_name,
+            parent,
+            name
+        )
+        .execute(&self.connection)
+        .await?;
+        if result.rows_affected() > 0 {
+            Ok(())
+        } else {
+            Err(DbError::DoesNotExist(0))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

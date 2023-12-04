@@ -1,12 +1,13 @@
 [package]
 name = "discfs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Virtual FUSE filesystem with files stored as Discord attachments"
 homepage = "https://crates.io/crates/discfs"
 documentation = "https://docs.rs/discfs"
 repository = "https://github.com/sqooid/discfs"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+readme = "readme.md"
 
 exclude = [".vscode/", "arch/", ".env*", "flake.*"]
 

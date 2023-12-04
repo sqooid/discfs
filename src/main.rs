@@ -1,4 +1,6 @@
 pub mod client;
+pub mod encryption;
+pub mod error;
 pub mod local;
 pub mod util;
 

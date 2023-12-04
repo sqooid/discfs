@@ -293,7 +293,7 @@ impl Filesystem for DiscFs {
                 let node = &nodes[i];
                 full = reply.add(
                     node.id as u64,
-                    0,
+                    (i + 1) as i64,
                     if node.directory {
                         FileType::Directory
                     } else {

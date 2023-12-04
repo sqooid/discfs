@@ -48,6 +48,11 @@ impl DiscFs {
             read_handles: HashMap::new(),
         })
     }
+
+    fn is_write(flags: i32) -> bool {
+        let write_flags = libc::O_RDWR | libc::O_WRONLY;
+        (flags & write_flags) > 0
+    }
 }
 
 impl Filesystem for DiscFs {
@@ -154,7 +159,7 @@ impl Filesystem for DiscFs {
         match node {
             Ok(n) => match n {
                 Some(n) => {
-                    if flags & 1 != 0 {
+                    if Self::is_write(flags) {
                         info!(
                             "create file: {}",
                             n.name.as_ref().unwrap_or(&"".to_string())
@@ -240,7 +245,7 @@ impl Filesystem for DiscFs {
         _flush: bool,
         reply: fuser::ReplyEmpty,
     ) {
-        if flags & 1 != 0 {
+        if Self::is_write(flags) {
             if let Some(file) = self.write_handles.get_mut(&ino) {
                 match file.flush() {
                     Ok(_) => reply.ok(),

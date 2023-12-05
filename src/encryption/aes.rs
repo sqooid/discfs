@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::SystemTime};
 
+use base64::Engine;
 use ring::{
     aead::*,
     rand::{SecureRandom, SystemRandom},
@@ -61,6 +62,16 @@ impl Aes {
         let generator = AesNonceGenerator::new();
         let key = LessSafeKey::new(unbound_key);
         Ok(Self { key, generator })
+    }
+
+    pub fn from_env(env_key: &str) -> Result<Self, EncryptionError> {
+        let key_string = std::env::var(env_key)?;
+        let engine = base64::engine::general_purpose::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::GeneralPurposeConfig::new(),
+        );
+        let key_bytes = engine.decode(key_string)?;
+        Self::new(&key_bytes)
     }
 
     pub fn encrypt<'a>(&mut self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {

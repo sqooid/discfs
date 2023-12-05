@@ -3,12 +3,12 @@ use std::{collections::HashMap, io::Write, sync::Arc, time::Duration};
 use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, ENOENT};
 use log::{debug, error, info};
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
     client::{
         client::{CloudClient, CloudRead, CloudWrite},
-        discord::client::DiscordClient,
+        discord::client::{DiscordClient, DiscordClientInner},
     },
     local::error::DbError,
     util::fs::attrs_from_node,
@@ -28,24 +28,31 @@ const EUNKNOWN: c_int = 99;
 // const FOPEN_PARALLEL_DIRECT_WRITES: u32 = 1 << 6;
 
 pub struct DiscFs {
-    db: Arc<FsDatabase>,
-    client: Arc<dyn CloudClient>,
     rt: Handle,
-    write_handles: HashMap<u64, Box<dyn CloudWrite>>,
-    read_handles: HashMap<u64, Box<dyn CloudRead>>,
+    inner: Arc<DiscFsInner>,
+}
+
+pub struct DiscFsInner {
+    pub write_handles: Arc<Mutex<HashMap<u64, Box<dyn CloudWrite>>>>,
+    pub read_handles: Arc<Mutex<HashMap<u64, Box<dyn CloudRead>>>>,
+    pub db: Arc<FsDatabase>,
+    pub client: Box<dyn CloudClient>,
 }
 
 impl DiscFs {
     pub fn new(rt: Handle, db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
         let db = Arc::new(db);
-        Ok(Self {
+        let inner = DiscFsInner {
             db: db.clone(),
-            client: Arc::new(match ctype {
+            client: Box::new(match ctype {
                 CloudType::Discord => DiscordClient::new(rt.clone(), db)?,
             }),
+            write_handles: Arc::new(Mutex::new(HashMap::new())),
+            read_handles: Arc::new(Mutex::new(HashMap::new())),
+        };
+        Ok(Self {
             rt,
-            write_handles: HashMap::new(),
-            read_handles: HashMap::new(),
+            inner: Arc::new(inner),
         })
     }
 
@@ -65,7 +72,7 @@ impl Filesystem for DiscFs {
     ) {
         debug!("lookup(parent: {:#x?}, name {:?})", parent, name);
 
-        let db = Arc::clone(&self.db);
+        let db = &self.inner.db.clone();
         let name_cp = name.to_owned();
         let node = self
             .rt
@@ -99,24 +106,25 @@ impl Filesystem for DiscFs {
             parent, name, mode, umask
         );
         info!("create directory: {:?}", name);
-        let db = Arc::clone(&self.db);
+        let inner = self.inner.clone();
         let name = name.to_owned();
-        let node = self
-            .rt
-            .block_on(async { db.create_node(parent, &name, true).await });
-        match node {
-            Ok(n) => {
-                if let Ok(attrs) = &attrs_from_node(&n) {
-                    reply.entry(&Duration::from_millis(64), attrs, 0)
-                } else {
-                    reply.error(EUNKNOWN)
+        self.rt.spawn(async move {
+            let name = name.to_owned();
+            let node = inner.db.create_node(parent, &name, true).await;
+            match node {
+                Ok(n) => {
+                    if let Ok(attrs) = &attrs_from_node(&n) {
+                        reply.entry(&Duration::from_millis(64), attrs, 0)
+                    } else {
+                        reply.error(EUNKNOWN)
+                    }
                 }
+                Err(e) => match e {
+                    crate::local::error::DbError::Exists(_, _) => reply.error(EEXIST),
+                    _ => reply.error(EUNKNOWN),
+                },
             }
-            Err(e) => match e {
-                crate::local::error::DbError::Exists(_, _) => reply.error(EEXIST),
-                _ => reply.error(EUNKNOWN),
-            },
-        }
+        });
     }
 
     fn mknod(
@@ -142,7 +150,7 @@ impl Filesystem for DiscFs {
 
         let node = self
             .rt
-            .block_on(async { self.db.create_node(parent, name, false).await });
+            .block_on(async { self.inner.db.create_node(parent, name, false).await });
         match node {
             Ok(n) => match attrs_from_node(&n) {
                 Ok(attrs) => reply.entry(&Duration::from_millis(64), &attrs, 0),
@@ -159,34 +167,35 @@ impl Filesystem for DiscFs {
     }
 
     fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, flags: i32, reply: fuser::ReplyOpen) {
-        let node = self
-            .rt
-            .block_on(async { self.db.get_node_by_id(ino).await });
-        match node {
-            Ok(n) => match n {
-                Some(n) => {
-                    if Self::is_write(flags) {
-                        info!(
-                            "create file: {}",
-                            n.name.as_ref().unwrap_or(&"".to_string())
-                        );
-                        let file = self.client.open_file_write(n);
-                        self.write_handles.insert(ino, file);
-                        reply.opened(0, 0);
-                    } else {
-                        info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
-                        if let Ok(file) = self.client.open_file_read(n) {
-                            self.read_handles.insert(ino, file);
+        let inner = self.inner.clone();
+        self.rt.spawn(async move {
+            let node = inner.db.get_node_by_id(ino).await;
+            match node {
+                Ok(n) => match n {
+                    Some(n) => {
+                        if Self::is_write(flags) {
+                            info!(
+                                "create file: {}",
+                                n.name.as_ref().unwrap_or(&"".to_string())
+                            );
+                            let file = inner.client.open_file_write(n).await;
+                            inner.write_handles.lock().await.insert(ino, file);
                             reply.opened(0, 0);
                         } else {
-                            reply.error(EUNKNOWN);
+                            info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
+                            if let Ok(file) = inner.client.open_file_read(n).await {
+                                inner.read_handles.lock().await.insert(ino, file);
+                                reply.opened(0, 0);
+                            } else {
+                                reply.error(EUNKNOWN);
+                            }
                         }
                     }
-                }
-                None => reply.error(ENOENT),
-            },
-            Err(_) => reply.error(EUNKNOWN),
-        }
+                    None => reply.error(ENOENT),
+                },
+                Err(_) => reply.error(EUNKNOWN),
+            }
+        });
     }
 
     fn write(
@@ -212,33 +221,38 @@ impl Filesystem for DiscFs {
             flags,
             lock_owner
         );
-        let file = self.write_handles.get_mut(&ino);
-        if let Some(handle) = file {
-            // Without encryption for now
-            if let Ok(written) = handle.write(data) {
-                reply.written(written as u32)
+        let inner = self.inner.clone();
+        let data = data.to_owned();
+        self.rt.spawn(async move {
+            let mut handles = inner.write_handles.lock().await;
+            let file = handles.get_mut(&ino);
+            if let Some(handle) = file {
+                if let Ok(written) = handle.write(&data).await {
+                    reply.written(written as u32)
+                } else {
+                    reply.error(EUNKNOWN)
+                };
             } else {
-                reply.error(EUNKNOWN)
-            };
-        } else {
-            reply.error(EUNKNOWN);
-        }
+                reply.error(EUNKNOWN);
+            }
+        });
     }
 
     fn getattr(&mut self, _req: &fuser::Request<'_>, ino: u64, reply: fuser::ReplyAttr) {
-        let result = self
-            .rt
-            .block_on(async { self.db.get_node_by_id(ino).await });
-        let node = result.unwrap_or(None);
-        if let Some(node) = node {
-            if let Ok(attrs) = attrs_from_node(&node) {
-                reply.attr(&Duration::from_millis(64), &attrs);
+        let inner = self.inner.clone();
+        self.rt.spawn(async move {
+            let result = inner.db.get_node_by_id(ino).await;
+            let node = result.unwrap_or(None);
+            if let Some(node) = node {
+                if let Ok(attrs) = attrs_from_node(&node) {
+                    reply.attr(&Duration::from_millis(64), &attrs);
+                } else {
+                    reply.error(EUNKNOWN)
+                }
             } else {
-                reply.error(EUNKNOWN)
-            }
-        } else {
-            reply.error(ENOENT)
-        };
+                reply.error(ENOENT)
+            };
+        });
     }
 
     fn release(
@@ -251,27 +265,30 @@ impl Filesystem for DiscFs {
         _flush: bool,
         reply: fuser::ReplyEmpty,
     ) {
-        if Self::is_write(flags) {
-            if let Some(handle) = self.write_handles.get_mut(&ino) {
-                match handle.flush() {
-                    Ok(_) => {
-                        handle.finish();
-                        reply.ok()
+        let inner = self.inner.clone();
+        self.rt.spawn(async move {
+            if Self::is_write(flags) {
+                if let Some(handle) = inner.write_handles.lock().await.get_mut(&ino) {
+                    match handle.flush().await {
+                        Ok(_) => {
+                            handle.finish();
+                            reply.ok()
+                        }
+                        Err(_) => reply.error(EUNKNOWN),
                     }
-                    Err(_) => reply.error(EUNKNOWN),
+                    inner.write_handles.lock().await.remove(&ino);
+                } else {
+                    reply.error(ENOENT)
                 }
-                self.write_handles.remove(&ino);
             } else {
-                reply.error(ENOENT)
+                if let Some(handle) = inner.read_handles.lock().await.remove(&ino) {
+                    handle.finish();
+                    reply.ok();
+                } else {
+                    reply.error(ENOENT);
+                }
             }
-        } else {
-            if let Some(handle) = self.read_handles.remove(&ino) {
-                handle.finish();
-                reply.ok();
-            } else {
-                reply.error(ENOENT);
-            }
-        }
+        });
     }
 
     fn readdir(
@@ -283,31 +300,32 @@ impl Filesystem for DiscFs {
         mut reply: fuser::ReplyDirectory,
     ) {
         debug!("readdir ino: {:?} offset: {:?}", ino, offset);
-        let result = self
-            .rt
-            .block_on(async { self.db.get_nodes_by_parent(ino as i64).await });
-        if let Ok(nodes) = result {
-            debug!("files {:?}", &nodes);
-            let mut full = false;
-            let mut i = offset as usize;
-            while !full && i < nodes.len() {
-                let node = &nodes[i];
-                full = reply.add(
-                    node.id as u64,
-                    (i + 1) as i64,
-                    if node.directory {
-                        FileType::Directory
-                    } else {
-                        FileType::RegularFile
-                    },
-                    node.name.clone().unwrap_or_else(|| "".to_string()),
-                );
-                i += 1;
+        let inner = self.inner.clone();
+        self.rt.spawn(async move {
+            let result = inner.db.get_nodes_by_parent(ino as i64).await;
+            if let Ok(nodes) = result {
+                debug!("files {:?}", &nodes);
+                let mut full = false;
+                let mut i = offset as usize;
+                while !full && i < nodes.len() {
+                    let node = &nodes[i];
+                    full = reply.add(
+                        node.id as u64,
+                        (i + 1) as i64,
+                        if node.directory {
+                            FileType::Directory
+                        } else {
+                            FileType::RegularFile
+                        },
+                        node.name.clone().unwrap_or_else(|| "".to_string()),
+                    );
+                    i += 1;
+                }
+                reply.ok();
+            } else {
+                reply.error(EUNKNOWN);
             }
-            reply.ok();
-        } else {
-            reply.error(EUNKNOWN);
-        }
+        });
     }
 
     fn read(
@@ -321,18 +339,21 @@ impl Filesystem for DiscFs {
         _lock_owner: Option<u64>,
         reply: fuser::ReplyData,
     ) {
-        if let Some(handle) = self.read_handles.get_mut(&ino) {
-            let mut buffer = vec![0; size as usize].into_boxed_slice();
-            let result = handle.read(&mut buffer);
-            if let Ok(written) = result {
-                debug!("written: {:?}", written);
-                reply.data(&buffer[..written]);
+        let inner = self.inner.clone();
+        self.rt.spawn(async move {
+            if let Some(handle) = inner.read_handles.lock().await.get_mut(&ino) {
+                let mut buffer = vec![0; size as usize].into_boxed_slice();
+                let result = handle.read(&mut buffer).await;
+                if let Ok(written) = result {
+                    debug!("written: {:?}", written);
+                    reply.data(&buffer[..written]);
+                } else {
+                    reply.error(EUNKNOWN);
+                }
             } else {
-                reply.error(EUNKNOWN);
+                reply.error(ENOENT);
             }
-        } else {
-            reply.error(ENOENT);
-        }
+        });
     }
 
     fn rmdir(
@@ -342,21 +363,24 @@ impl Filesystem for DiscFs {
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEmpty,
     ) {
-        let result = self.rt.block_on(async {
-            self.db
+        let inner = self.inner.clone();
+        let name = name.to_owned();
+        self.rt.spawn(async move {
+            let result = inner
+                .db
                 .delete_node(parent as i64, &name.to_string_lossy(), true)
-                .await
-        });
-        if let Ok(deleted) = result {
-            if deleted == 0 {
-                reply.error(ENOENT);
+                .await;
+            if let Ok(deleted) = result {
+                if deleted == 0 {
+                    reply.error(ENOENT);
+                } else {
+                    info!("deleted directory: {:?}", name);
+                    reply.ok();
+                }
             } else {
-                info!("deleted directory: {:?}", name);
-                reply.ok();
+                reply.error(EUNKNOWN);
             }
-        } else {
-            reply.error(EUNKNOWN);
-        }
+        });
     }
 
     fn unlink(
@@ -366,21 +390,24 @@ impl Filesystem for DiscFs {
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEmpty,
     ) {
-        let result = self.rt.block_on(async {
-            self.db
+        let inner = self.inner.clone();
+        let name = name.to_owned();
+        self.rt.spawn(async move {
+            let result = inner
+                .db
                 .delete_node(parent as i64, &name.to_string_lossy(), false)
-                .await
-        });
-        if let Ok(deleted) = result {
-            if deleted == 0 {
-                reply.error(ENOENT);
+                .await;
+            if let Ok(deleted) = result {
+                if deleted == 0 {
+                    reply.error(ENOENT);
+                } else {
+                    info!("deleted file: {:?}", name);
+                    reply.ok();
+                }
             } else {
-                info!("deleted file: {:?}", name);
-                reply.ok();
+                reply.error(EUNKNOWN);
             }
-        } else {
-            reply.error(EUNKNOWN);
-        }
+        });
     }
 
     fn rename(
@@ -393,21 +420,26 @@ impl Filesystem for DiscFs {
         _flags: u32,
         reply: fuser::ReplyEmpty,
     ) {
-        let result = self.rt.block_on(async {
-            self.db
+        let inner = self.inner.clone();
+        let name = name.to_owned();
+        let newparent = newparent.to_owned();
+        let newname = newname.to_owned();
+        self.rt.spawn(async move {
+            let result = inner
+                .db
                 .move_node(
                     parent as i64,
                     &name.to_string_lossy(),
                     newparent as i64,
                     &newname.to_string_lossy(),
                 )
-                .await
+                .await;
+            match result {
+                Ok(_) => reply.ok(),
+                Err(DbError::DoesNotExist(_)) => reply.error(ENOENT),
+                Err(_) => reply.error(EUNKNOWN),
+            }
         });
-        match result {
-            Ok(_) => reply.ok(),
-            Err(DbError::DoesNotExist(_)) => reply.error(ENOENT),
-            Err(_) => reply.error(EUNKNOWN),
-        }
     }
 }
 

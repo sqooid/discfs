@@ -1,6 +1,8 @@
 use std::{cmp::min, io::Write, sync::Arc, time::SystemTime};
 
+use async_trait::async_trait;
 use log::{debug, info, trace};
+use ring::aead::{MAX_TAG_LEN, NONCE_LEN};
 
 use crate::{
     client::{
@@ -11,11 +13,13 @@ use crate::{
         db::{FsDatabase, FsNode},
         error::FsError,
     },
+    util::async_file::{AsyncRead, AsyncWrite},
 };
 
-use super::net::DiscordNetClient;
+use super::{client::DiscordClientInner, net::DiscordNetClient};
 
-pub const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
+pub const DISCORD_CONTENT_SIZE: usize = 25 * 1024 * 1024;
+pub const DISCORD_BLOCK_SIZE: usize = DISCORD_CONTENT_SIZE - MAX_TAG_LEN - NONCE_LEN;
 
 /// Virtual file hosted on Discord
 pub struct DiscordFileWrite {
@@ -23,34 +27,37 @@ pub struct DiscordFileWrite {
     total_size: i64,
     node: FsNode,
     prev_id: Option<String>,
-    client: Arc<DiscordNetClient>,
-    db: Arc<FsDatabase>,
     open_time: SystemTime,
+    client: Arc<DiscordClientInner>,
 }
 
 impl DiscordFileWrite {
-    pub fn new(client: Arc<DiscordNetClient>, db: Arc<FsDatabase>, node: FsNode) -> Self {
+    pub fn new(client: Arc<DiscordClientInner>, node: FsNode) -> Self {
         DiscordFileWrite {
             buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
             total_size: 0,
             node,
             prev_id: None,
             client,
-            db,
             open_time: SystemTime::now(),
         }
     }
 
-    fn upload_buffer(&self) -> Result<String, ClientError> {
-        self.client.rt.block_on(async {
-            self.client
-                .create_message(
-                    &self.client.channel_id,
-                    &self.buffer.as_slice(),
-                    &self.prev_id,
-                )
-                .await
-        })
+    /// Uploads a buffer with encryption.
+    /// Internal buffer gets mutated in place so must be cleared to be reused
+    async fn upload_buffer(&mut self) -> Result<String, ClientError> {
+        // Encrypt buffer
+        let id = self
+            .client
+            .net
+            .create_message(
+                &self.client.net.channel_id,
+                &self.buffer.as_slice(),
+                &self.prev_id,
+            )
+            .await?;
+        self.buffer.clear();
+        Ok(id)
     }
 }
 
@@ -66,18 +73,19 @@ impl CloudWrite for DiscordFileWrite {
     }
 }
 
-impl Write for DiscordFileWrite {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+#[async_trait]
+impl AsyncWrite for DiscordFileWrite {
+    async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.total_size += buf.len() as i64;
 
         // Need to upload a block
-        if self.buffer.len() + buf.len() > DISCORD_BLOCK_SIZE {
-            let space = DISCORD_BLOCK_SIZE - &self.buffer.len();
+        if self.buffer.len() + buf.len() > DISCORD_CONTENT_SIZE {
+            let space = DISCORD_CONTENT_SIZE - &self.buffer.len();
             let slice = &buf[..space];
             slice.iter().for_each(|b| self.buffer.push(*b));
 
             // Upload
-            let message_id = self.upload_buffer()?;
+            let message_id = self.upload_buffer().await?;
 
             self.prev_id = Some(message_id);
             self.buffer.clear();
@@ -89,14 +97,13 @@ impl Write for DiscordFileWrite {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    async fn flush(&mut self) -> std::io::Result<()> {
         if self.buffer.len() > 0 {
-            let message_id = self.upload_buffer()?;
-            self.client.rt.block_on(async {
-                self.db
-                    .set_node_cloud_id(&self.node.id, &message_id, self.total_size)
-                    .await
-            })?;
+            let message_id = self.upload_buffer().await?;
+            self.client
+                .db
+                .set_node_cloud_id(&self.node.id, &message_id, self.total_size)
+                .await?;
         }
         Ok(())
     }
@@ -104,7 +111,7 @@ impl Write for DiscordFileWrite {
 
 pub struct DiscordFileRead {
     buffer: Vec<u8>,
-    client: Arc<DiscordNetClient>,
+    client: Arc<DiscordClientInner>,
     file_ids: Vec<u64>,
     current_index: usize,
     open_time: SystemTime,
@@ -112,23 +119,22 @@ pub struct DiscordFileRead {
 }
 
 impl DiscordFileRead {
-    pub fn new(client: Arc<DiscordNetClient>, node: FsNode) -> Result<Self, FsError> {
-        let ids: Result<Vec<u64>, FsError> = client.rt.block_on(async {
-            let cloud_id = node.cloud_id.as_ref().ok_or_else(|| {
-                FsError::DatabaseError(crate::local::error::DbError::Other(
-                    "Cloud id not set".to_string(),
-                ))
-            })?;
-            client
-                .get_file_chain(&client.channel_id, &cloud_id)
-                .await
-                .map_err(|e| FsError::ClientError(e))
-        });
+    pub async fn new(client: Arc<DiscordClientInner>, node: FsNode) -> Result<Self, FsError> {
+        let cloud_id = node.cloud_id.as_ref().ok_or_else(|| {
+            FsError::DatabaseError(crate::local::error::DbError::Other(
+                "Cloud id not set".to_string(),
+            ))
+        })?;
+        let ids: Vec<u64> = client
+            .net
+            .get_file_chain(&client.net.channel_id, &cloud_id)
+            .await
+            .map_err(|e| FsError::ClientError(e))?;
         debug!("file ids: {:?}", ids);
         Ok(Self {
             client,
-            file_ids: ids?,
-            buffer: Vec::with_capacity(DISCORD_BLOCK_SIZE),
+            file_ids: ids,
+            buffer: Vec::with_capacity(DISCORD_CONTENT_SIZE),
             current_index: 0,
             open_time: SystemTime::now(),
             total_size: 0,
@@ -148,8 +154,9 @@ impl CloudRead for DiscordFileRead {
     }
 }
 
-impl std::io::Read for DiscordFileRead {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+#[async_trait]
+impl AsyncRead for DiscordFileRead {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let read_size = buf.len();
         let mut copied: usize = 0;
         trace!("read buffer size: {:?}", read_size);
@@ -182,11 +189,10 @@ impl std::io::Read for DiscordFileRead {
                 .unwrap_or(&0)
                 .to_string();
             debug!("downloading id: {:?}", next_id);
-            self.client.rt.block_on(async {
-                self.client
-                    .download_file(&self.client.channel_id, &next_id, &mut self.buffer)
-                    .await
-            })?;
+            self.client
+                .net
+                .download_file(&self.client.net.channel_id, &next_id, &mut self.buffer)
+                .await?;
 
             // Copy to output buffer
             let buf_size = self.buffer.len();

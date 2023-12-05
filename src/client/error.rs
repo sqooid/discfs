@@ -2,6 +2,8 @@ use std::num::ParseIntError;
 
 use thiserror::Error;
 
+use crate::error::encryption::EncryptionError;
+
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Client initialization failed: {0}")]
@@ -15,6 +17,9 @@ pub enum ClientError {
 
     #[error("Parse error: {0}")]
     Parse(String),
+
+    #[error("Encryption error {0:?}")]
+    EncryptionError(#[from] EncryptionError),
 }
 
 impl From<ClientError> for std::io::Error {

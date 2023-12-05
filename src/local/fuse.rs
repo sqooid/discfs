@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, ENOENT};

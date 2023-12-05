@@ -9,14 +9,11 @@ use crate::{
         client::{CloudRead, CloudWrite},
         error::ClientError,
     },
-    local::{
-        db::{FsNode},
-        error::FsError,
-    },
+    local::{db::FsNode, error::FsError},
     util::async_file::{AsyncRead, AsyncWrite},
 };
 
-use super::{client::DiscordClientInner};
+use super::client::DiscordClientInner;
 
 pub const DISCORD_CONTENT_SIZE: usize = 25 * 1024 * 1024;
 pub const DISCORD_BLOCK_SIZE: usize = DISCORD_CONTENT_SIZE - MAX_TAG_LEN - NONCE_LEN;

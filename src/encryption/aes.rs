@@ -30,8 +30,7 @@ impl AesNonceGenerator {
         } else {
             self.random.fill(&mut buffer)?;
         }
-        // Ok(Nonce::assume_unique_for_key(buffer))
-        Ok(Nonce::assume_unique_for_key([0; 12]))
+        Ok(Nonce::assume_unique_for_key(buffer))
     }
 }
 
@@ -52,64 +51,68 @@ impl NonceSequence for AesNonceSequence {
 }
 
 pub struct Aes {
-    sealing_key: SealingKey<AesNonceSequence>,
-    opening_key: OpeningKey<AesNonceSequence>,
+    key: LessSafeKey,
+    generator: AesNonceGenerator,
 }
 
 impl Aes {
     pub fn new(key: &[u8]) -> Result<Self, EncryptionError> {
-        let unbound_sealing_key = UnboundKey::new(&AES_256_GCM, key)?;
-        let unbound_opening_key = UnboundKey::new(&AES_256_GCM, key)?;
-        let generator = Arc::new(AesNonceGenerator::new());
-        let sealing_key = SealingKey::new(
-            unbound_sealing_key,
-            AesNonceSequence::new(generator.clone()),
-        );
-        let opening_key = OpeningKey::new(unbound_opening_key, AesNonceSequence::new(generator));
-        Ok(Self {
-            sealing_key,
-            opening_key,
-        })
+        let unbound_key = UnboundKey::new(&AES_256_GCM, key)?;
+        let generator = AesNonceGenerator::new();
+        let key = LessSafeKey::new(unbound_key);
+        Ok(Self { key, generator })
     }
 
-    pub fn encrypt(&mut self, data: &mut Vec<u8>) -> Result<(), EncryptionError> {
-        Ok(self
-            .sealing_key
-            .seal_in_place_append_tag(Aad::empty(), data)?)
+    pub fn encrypt<'a>(&mut self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
+        let nonce = self.generator.generate_nonce()?;
+        let nonce_bytes = nonce.as_ref().to_owned();
+        println!("nonce: {:x?}", nonce_bytes);
+        self.key
+            .seal_in_place_append_tag(nonce, Aad::empty(), data)?;
+        data.extend_from_slice(&nonce_bytes);
+        Ok(&data[..])
     }
-    pub fn decrypt(&mut self, data: &mut Vec<u8>) -> Result<(), EncryptionError> {
+    pub fn decrypt<'a>(&mut self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
+        let mut nonce_bytes: [u8; NONCE_LEN] = [0; NONCE_LEN];
+        nonce_bytes[..].clone_from_slice(&data[data.len() - NONCE_LEN..]);
+        data.truncate(data.len() - NONCE_LEN);
+        println!("nonce: {:x?}", nonce_bytes);
+        let nonce = Nonce::assume_unique_for_key(nonce_bytes);
         Ok(self
-            .opening_key
-            .open_in_place(Aad::empty(), data)
-            .map(|_| ())?)
+            .key
+            .open_in_place(nonce, Aad::empty(), data)
+            .map(|e| e)?)
     }
 }
 
 #[cfg(test)]
 mod test {
     use base64::Engine;
+    use ring::aead::AES_256_GCM;
 
     use super::Aes;
 
     type Res = Result<(), Box<dyn std::error::Error>>;
     #[test]
     fn test_encrypt_decrypt() -> Res {
+        println!("tag length: {}", AES_256_GCM.tag_len());
+        println!("nonce length: {}", AES_256_GCM.nonce_len());
         let key_string = "bs6UDssSfq/jN2U5crEhmjWkUmIDfm4BfCXJ1uPKN+k=";
         let engine = base64::engine::general_purpose::GeneralPurpose::new(
             &base64::alphabet::STANDARD,
             base64::engine::general_purpose::GeneralPurposeConfig::new(),
         );
         let key_bytes = engine.decode(key_string)?;
-        println!("{}", key_bytes.len());
+        println!("key length: {}", key_bytes.len());
         let mut aes = Aes::new(&key_bytes)?;
-        println!("2");
         let message = "hello";
         let mut message_bytes = message.as_bytes().to_vec();
+        println!("message: {:x?}", message_bytes);
         aes.encrypt(&mut message_bytes)?;
-        println!("{}", message_bytes.len());
-        aes.decrypt(&mut message_bytes)?;
-        println!("4");
-        assert_eq!(std::str::from_utf8(&message_bytes)?, message);
+        println!("encrypted: {} bytes", message_bytes.len());
+        let decrypted = aes.decrypt(&mut message_bytes)?;
+        println!("message: {:x?}", decrypted);
+        assert_eq!(std::str::from_utf8(&decrypted)?, message);
         Ok(())
     }
 }

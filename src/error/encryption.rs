@@ -13,7 +13,7 @@ pub enum EncryptionError {
 }
 
 impl From<ring::error::Unspecified> for EncryptionError {
-    fn from(value: ring::error::Unspecified) -> Self {
+    fn from(_value: ring::error::Unspecified) -> Self {
         Self::AesUnknown
     }
 }

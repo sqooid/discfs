@@ -1,4 +1,4 @@
-use std::{cmp::min, io::Write, sync::Arc, time::SystemTime};
+use std::{cmp::min, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use log::{debug, info, trace};
@@ -10,13 +10,13 @@ use crate::{
         error::ClientError,
     },
     local::{
-        db::{FsDatabase, FsNode},
+        db::{FsNode},
         error::FsError,
     },
     util::async_file::{AsyncRead, AsyncWrite},
 };
 
-use super::{client::DiscordClientInner, net::DiscordNetClient};
+use super::{client::DiscordClientInner};
 
 pub const DISCORD_CONTENT_SIZE: usize = 25 * 1024 * 1024;
 pub const DISCORD_BLOCK_SIZE: usize = DISCORD_CONTENT_SIZE - MAX_TAG_LEN - NONCE_LEN;

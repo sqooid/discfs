@@ -8,7 +8,7 @@ use tokio::{runtime::Handle, sync::Mutex};
 use crate::{
     client::{
         client::{CloudClient, CloudRead, CloudWrite},
-        discord::client::{DiscordClient, DiscordClientInner},
+        discord::client::{DiscordClient},
     },
     local::error::DbError,
     util::fs::attrs_from_node,

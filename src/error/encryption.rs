@@ -29,3 +29,9 @@ impl From<DecodeError> for EncryptionError {
         Self::InvalidKey(value.to_string())
     }
 }
+
+impl From<EncryptionError> for std::io::Error {
+    fn from(value: EncryptionError) -> Self {
+        Self::new(std::io::ErrorKind::InvalidData, value)
+    }
+}

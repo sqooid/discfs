@@ -1,4 +1,4 @@
-use std::env;
+use std::{cmp::min, env};
 
 use log::{debug, error, trace};
 use reqwest::{header, multipart, ClientBuilder, StatusCode};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::runtime::Handle;
 
-use crate::client::error::ClientError;
+use crate::{client::error::ClientError, main};
 
 const DISCORD_FILENAME: &str = "file.bin";
 
@@ -166,25 +166,26 @@ impl DiscordNetClient {
         Ok(reverse_ids.into_iter().rev().collect())
     }
 
-    pub async fn download_file(
+    /// Download discord attachment.
+    /// Fills provided buffer with downloaded bytes and returns valid slice
+    pub async fn download_file<'a>(
         &self,
         channel_id: &str,
         attachment_id: &str,
-        buffer: &mut Vec<u8>,
-    ) -> Result<(), ClientError> {
-        if let Ok(response) = self
+        buffer: &'a mut Vec<u8>,
+    ) -> Result<&'a [u8], ClientError> {
+        let response = self
             .client
             .get(format!(
                 "{}/{}/{}/{}",
                 self.files_url, channel_id, attachment_id, DISCORD_FILENAME
             ))
             .send()
-            .await
-        {
-            let body = response.bytes().await?;
-            body.iter().for_each(|e| buffer.push(*e));
-        }
-        Ok(())
+            .await?;
+        let body = response.bytes().await?;
+        buffer.clear();
+        buffer.extend(&body[..body.len()]);
+        Ok(&buffer[..body.len()])
     }
 }
 

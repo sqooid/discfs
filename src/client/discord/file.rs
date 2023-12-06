@@ -44,14 +44,11 @@ impl DiscordFileWrite {
     /// Internal buffer gets mutated in place so must be cleared to be reused
     async fn upload_buffer(&mut self) -> Result<String, ClientError> {
         // Encrypt buffer
+        let encrypted_buffer = self.client.aes.encrypt(&mut self.buffer)?;
         let id = self
             .client
             .net
-            .create_message(
-                &self.client.net.channel_id,
-                &self.buffer.as_slice(),
-                &self.prev_id,
-            )
+            .create_message(&self.client.net.channel_id, encrypted_buffer, &self.prev_id)
             .await?;
         self.buffer.clear();
         Ok(id)
@@ -186,21 +183,22 @@ impl AsyncRead for DiscordFileRead {
                 .unwrap_or(&0)
                 .to_string();
             debug!("downloading id: {:?}", next_id);
+            let mut download_buffer: Vec<u8> = Vec::with_capacity(DISCORD_BLOCK_SIZE);
             self.client
                 .net
-                .download_file(&self.client.net.channel_id, &next_id, &mut self.buffer)
+                .download_file(&self.client.net.channel_id, &next_id, &mut download_buffer)
                 .await?;
 
             // Copy to output buffer
-            let buf_size = self.buffer.len();
+            let decryped_buffer = self.client.aes.decrypt(&mut download_buffer)?;
+            let buf_size = decryped_buffer.len();
             let copy_size = min(buf_size, read_size - copied);
-            buf[copied..copied + copy_size].clone_from_slice(&self.buffer[..copy_size]);
+            buf[copied..copied + copy_size].clone_from_slice(&decryped_buffer[..copy_size]);
 
             // Left over buffer
             if buf_size > copy_size {
-                let leftover = self.buffer[copy_size..].to_vec();
                 self.buffer.clear();
-                self.buffer.clone_from(&leftover);
+                self.buffer.extend(&decryped_buffer[copy_size..]);
             }
 
             copied += copy_size;

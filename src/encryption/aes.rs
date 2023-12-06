@@ -74,7 +74,7 @@ impl Aes {
         Self::new(&key_bytes)
     }
 
-    pub fn encrypt<'a>(&mut self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
+    pub fn encrypt<'a>(&self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
         let nonce = self.generator.generate_nonce()?;
         let nonce_bytes = nonce.as_ref().to_owned();
         println!("nonce: {:x?}", nonce_bytes);
@@ -83,7 +83,7 @@ impl Aes {
         data.extend_from_slice(&nonce_bytes);
         Ok(&data[..])
     }
-    pub fn decrypt<'a>(&mut self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
+    pub fn decrypt<'a>(&self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
         let mut nonce_bytes: [u8; NONCE_LEN] = [0; NONCE_LEN];
         nonce_bytes[..].clone_from_slice(&data[data.len() - NONCE_LEN..]);
         data.truncate(data.len() - NONCE_LEN);

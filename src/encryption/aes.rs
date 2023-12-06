@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use base64::Engine;
+use log::{debug, trace};
 use ring::{
     aead::*,
     rand::{SecureRandom, SystemRandom},
@@ -77,22 +78,25 @@ impl Aes {
     pub fn encrypt<'a>(&self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
         let nonce = self.generator.generate_nonce()?;
         let nonce_bytes = nonce.as_ref().to_owned();
-        println!("nonce: {:x?}", nonce_bytes);
+        trace!("nonce: {:x?}", nonce_bytes);
+        let original_len = data.len();
         self.key
             .seal_in_place_append_tag(nonce, Aad::empty(), data)?;
         data.extend_from_slice(&nonce_bytes);
+        debug!("encrypted {} bytes to {} bytes", original_len, data.len());
         Ok(&data[..])
     }
+
     pub fn decrypt<'a>(&self, data: &'a mut Vec<u8>) -> Result<&'a [u8], EncryptionError> {
+        let original_len = data.len();
         let mut nonce_bytes: [u8; NONCE_LEN] = [0; NONCE_LEN];
         nonce_bytes[..].clone_from_slice(&data[data.len() - NONCE_LEN..]);
         data.truncate(data.len() - NONCE_LEN);
-        println!("nonce: {:x?}", nonce_bytes);
+        trace!("nonce: {:x?}", nonce_bytes);
         let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-        Ok(self
-            .key
-            .open_in_place(nonce, Aad::empty(), data)
-            .map(|e| e)?)
+        let result = self.key.open_in_place(nonce, Aad::empty(), data)?;
+        debug!("decrypted {} bytes to {} bytes", original_len, result.len());
+        Ok(result)
     }
 }
 

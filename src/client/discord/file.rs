@@ -15,8 +15,8 @@ use crate::{
 
 use super::client::DiscordClientInner;
 
-pub const DISCORD_CONTENT_SIZE: usize = 25 * 1024 * 1024;
-pub const DISCORD_BLOCK_SIZE: usize = DISCORD_CONTENT_SIZE - MAX_TAG_LEN - NONCE_LEN;
+pub const DISCORD_BLOCK_SIZE: usize = 25 * 1024 * 1024;
+pub const DISCORD_CONTENT_SIZE: usize = DISCORD_BLOCK_SIZE - MAX_TAG_LEN - NONCE_LEN;
 
 /// Virtual file hosted on Discord
 pub struct DiscordFileWrite {
@@ -73,30 +73,32 @@ impl AsyncWrite for DiscordFileWrite {
         self.total_size += buf.len() as i64;
 
         // Need to upload a block
-        if self.buffer.len() + buf.len() > DISCORD_CONTENT_SIZE {
+        if self.buffer.len() + buf.len() >= DISCORD_CONTENT_SIZE {
             let space = DISCORD_CONTENT_SIZE - &self.buffer.len();
-            let slice = &buf[..space];
-            slice.iter().for_each(|b| self.buffer.push(*b));
+            self.buffer.extend(&buf[..space]);
 
             // Upload
             let message_id = self.upload_buffer().await?;
-
             self.prev_id = Some(message_id);
+
             self.buffer.clear();
-            let slice = &buf[space..];
-            slice.iter().for_each(|b| self.buffer.push(*b));
+
+            // Store rest of write to buffer
+            self.buffer.extend(&buf[space..])
         } else {
-            buf.iter().for_each(|b| self.buffer.push(*b));
+            self.buffer.extend(buf);
         }
         Ok(buf.len())
     }
 
     async fn flush(&mut self) -> std::io::Result<()> {
         if self.buffer.len() > 0 {
-            let message_id = self.upload_buffer().await?;
+            self.prev_id = Some(self.upload_buffer().await?);
+        }
+        if let Some(id) = self.prev_id.as_ref() {
             self.client
                 .db
-                .set_node_cloud_id(&self.node.id, &message_id, self.total_size)
+                .set_node_cloud_id(&self.node.id, id, self.total_size)
                 .await?;
         }
         Ok(())
@@ -152,6 +154,7 @@ impl CloudRead for DiscordFileRead {
 impl AsyncRead for DiscordFileRead {
     async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let read_size = buf.len();
+        self.total_size += read_size as u64;
         let mut copied: usize = 0;
         trace!("read buffer size: {:?}", read_size);
 
@@ -161,17 +164,18 @@ impl AsyncRead for DiscordFileRead {
             let copy_size = min(buf_size, read_size);
             trace!("clearing read buffer: {:?}/{:?} bytes", copy_size, buf_size);
             buf[..copy_size].clone_from_slice(&self.buffer[..copy_size]);
+            copied += copy_size;
 
-            // Left over buffer
-            if buf_size >= copy_size {
+            // Left-over buffer
+            if buf_size > copy_size {
                 let leftover = self.buffer[copy_size..].to_vec();
                 self.buffer.clear();
-                self.buffer.clone_from(&leftover);
-                self.total_size += copy_size as u64;
-                return Ok(copy_size);
+                self.buffer.extend(&leftover);
             }
-
-            copied += copy_size
+            // Cleared buffer
+            else if buf_size == copy_size {
+                self.buffer.clear();
+            }
         }
 
         // Or need to keep reading
@@ -189,13 +193,14 @@ impl AsyncRead for DiscordFileRead {
                 .download_file(&self.client.net.channel_id, &next_id, &mut download_buffer)
                 .await?;
 
-            // Copy to output buffer
+            // Decrypt
             let decryped_buffer = self.client.aes.decrypt(&mut download_buffer)?;
+            // Copy to output buffer
             let buf_size = decryped_buffer.len();
             let copy_size = min(buf_size, read_size - copied);
             buf[copied..copied + copy_size].clone_from_slice(&decryped_buffer[..copy_size]);
 
-            // Left over buffer
+            // Store left-over buffer
             if buf_size > copy_size {
                 self.buffer.clear();
                 self.buffer.extend(&decryped_buffer[copy_size..]);
@@ -205,7 +210,6 @@ impl AsyncRead for DiscordFileRead {
             self.current_index += 1;
         }
 
-        self.total_size += copied as u64;
         Ok(copied)
     }
 }

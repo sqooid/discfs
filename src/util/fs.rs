@@ -22,7 +22,7 @@ pub fn attrs_from_node(node: &FsNode) -> Result<FileAttr, FsError> {
         perm: if node.directory {
             0b111111111
         } else {
-            0b100100100
+            0b110110110
         },
         nlink: 1,
         uid: 0,

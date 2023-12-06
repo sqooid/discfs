@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use fuser::{FileType, Filesystem};
 use libc::{c_int, EEXIST, ENOENT};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
@@ -72,24 +72,24 @@ impl Filesystem for DiscFs {
     ) {
         debug!("lookup(parent: {:#x?}, name {:?})", parent, name);
 
-        let db = &self.inner.db.clone();
+        let inner = self.inner.clone();
         let name_cp = name.to_owned();
-        let node = self
-            .rt
-            .block_on(async { db.get_node(parent, &name_cp).await });
-        match node {
-            Ok(n) => match n {
-                Some(n) => {
-                    if let Ok(attrs) = &attrs_from_node(&n) {
-                        reply.entry(&Duration::from_millis(64), attrs, 0)
-                    } else {
-                        reply.error(EUNKNOWN)
+        self.rt.spawn(async move {
+            let node = inner.db.get_node(parent, &name_cp).await;
+            match node {
+                Ok(n) => match n {
+                    Some(n) => {
+                        if let Ok(attrs) = &attrs_from_node(&n) {
+                            reply.entry(&Duration::from_millis(64), attrs, 0)
+                        } else {
+                            reply.error(EUNKNOWN)
+                        }
                     }
-                }
-                None => reply.error(ENOENT),
-            },
-            Err(_) => reply.error(EUNKNOWN),
-        };
+                    None => reply.error(ENOENT),
+                },
+                Err(_) => reply.error(EUNKNOWN),
+            };
+        });
     }
 
     fn mkdir(
@@ -148,22 +148,24 @@ impl Filesystem for DiscFs {
             return;
         }
 
-        let node = self
-            .rt
-            .block_on(async { self.inner.db.create_node(parent, name, false).await });
-        match node {
-            Ok(n) => match attrs_from_node(&n) {
-                Ok(attrs) => reply.entry(&Duration::from_millis(64), &attrs, 0),
-                Err(e) => {
-                    error!("error in mknod: {:?}", e);
-                    reply.error(EUNKNOWN)
-                }
-            },
-            Err(e) => match e {
-                DbError::Exists(_, _) => reply.error(EEXIST),
-                _ => reply.error(EUNKNOWN),
-            },
-        }
+        let inner = self.inner.clone();
+        let name = name.to_owned();
+        self.rt.spawn(async move {
+            let node = inner.db.create_node(parent, &name, false).await;
+            match node {
+                Ok(n) => match attrs_from_node(&n) {
+                    Ok(attrs) => reply.entry(&Duration::from_millis(64), &attrs, 0),
+                    Err(e) => {
+                        error!("error in mknod: {:?}", e);
+                        reply.error(EUNKNOWN)
+                    }
+                },
+                Err(e) => match e {
+                    DbError::Exists(_, _) => reply.error(EEXIST),
+                    _ => reply.error(EUNKNOWN),
+                },
+            }
+        });
     }
 
     fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, flags: i32, reply: fuser::ReplyOpen) {
@@ -210,17 +212,6 @@ impl Filesystem for DiscFs {
         lock_owner: Option<u64>,
         reply: fuser::ReplyWrite,
     ) {
-        debug!(
-            "write(ino: {:#x?}, fh: {}, offset: {}, data.len(): {}, \
-            write_flags: {:#x?}, flags: {:#x?}, lock_owner: {:?})",
-            ino,
-            fh,
-            offset,
-            data.len(),
-            write_flags,
-            flags,
-            lock_owner
-        );
         let inner = self.inner.clone();
         let data = data.to_owned();
         self.rt.spawn(async move {
@@ -345,7 +336,7 @@ impl Filesystem for DiscFs {
                 let mut buffer = vec![0; size as usize].into_boxed_slice();
                 let result = handle.read(&mut buffer).await;
                 if let Ok(written) = result {
-                    debug!("written: {:?}", written);
+                    trace!("written: {:?}", written);
                     reply.data(&buffer[..written]);
                 } else {
                     reply.error(EUNKNOWN);

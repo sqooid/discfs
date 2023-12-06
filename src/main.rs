@@ -43,7 +43,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         MountOption::DefaultPermissions,
         MountOption::Async,
     ];
-    let _ = fuser::mount2(fs, cli.mountpoint, &mount_options);
+
+    rt.block_on(async {
+        let _ = fuser::mount2(fs, cli.mountpoint, &mount_options);
+    });
 
     Ok(())
 }

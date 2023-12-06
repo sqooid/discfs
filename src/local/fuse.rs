@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use fuser::{FileType, Filesystem};
-use libc::{c_int, EEXIST, ENOENT};
+use libc::{c_int, EEXIST, ENOENT, EPERM};
 use log::{debug, error, info, trace};
 use tokio::{runtime::Handle, sync::Mutex};
 
@@ -38,7 +38,11 @@ pub struct DiscFsInner {
     pub db: Arc<FsDatabase>,
     pub client: Box<dyn CloudClient>,
 }
-
+enum OpenMode {
+    Read,
+    Write,
+    ReadWrite,
+}
 impl DiscFs {
     pub fn new(rt: Handle, db: FsDatabase, ctype: CloudType) -> Result<Self, FsError> {
         let db = Arc::new(db);
@@ -59,6 +63,16 @@ impl DiscFs {
     fn is_write(flags: i32) -> bool {
         let write_flags = libc::O_RDWR | libc::O_WRONLY;
         (flags & write_flags) > 0
+    }
+
+    fn get_mode(flags: i32) -> OpenMode {
+        if flags & libc::O_RDWR > 0 {
+            OpenMode::ReadWrite
+        } else if flags & libc::O_WRONLY > 0 {
+            OpenMode::Write
+        } else {
+            OpenMode::Read
+        }
     }
 }
 
@@ -127,6 +141,53 @@ impl Filesystem for DiscFs {
         });
     }
 
+    fn create(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        mode: u32,
+        umask: u32,
+        flags: i32,
+        reply: fuser::ReplyCreate,
+    ) {
+        let inner = self.inner.clone();
+        let name = name.to_owned();
+        self.rt.spawn(async move {
+            let mode = Self::get_mode(flags);
+            match mode {
+                OpenMode::Write => {}
+                _ => {
+                    trace!("can't read created node");
+                    reply.error(EPERM);
+                    return;
+                }
+            };
+            let node = inner.db.create_node(parent, &name, false).await;
+            match node {
+                Ok(n) => {
+                    let attrs = attrs_from_node(&n);
+                    match attrs {
+                        Ok(attrs) => {
+                            info!(
+                                "create file: {}",
+                                n.name.as_ref().unwrap_or(&"".to_string())
+                            );
+                            let id = n.id;
+                            let file = inner.client.open_file_write(n).await;
+                            let _already_open =
+                                inner.write_handles.lock().await.insert(id as u64, file);
+                            reply.created(&Duration::from_millis(64), &attrs, 0, 0, 0);
+                        }
+                        Err(_) => reply.error(EUNKNOWN),
+                    }
+                }
+                Err(DbError::Exists(_, _)) => reply.error(EEXIST),
+                _ => reply.error(EUNKNOWN),
+            }
+        });
+    }
+
     fn mknod(
         &mut self,
         _req: &fuser::Request<'_>,
@@ -174,16 +235,21 @@ impl Filesystem for DiscFs {
             let node = inner.db.get_node_by_id(ino).await;
             match node {
                 Ok(n) => match n {
-                    Some(n) => {
-                        if Self::is_write(flags) {
+                    Some(n) => match Self::get_mode(flags) {
+                        OpenMode::Write => {
+                            if inner.write_handles.lock().await.contains_key(&ino) {
+                                reply.error(EEXIST);
+                                return;
+                            }
                             info!(
                                 "create file: {}",
                                 n.name.as_ref().unwrap_or(&"".to_string())
                             );
                             let file = inner.client.open_file_write(n).await;
-                            inner.write_handles.lock().await.insert(ino, file);
+                            let _already_open = inner.write_handles.lock().await.insert(ino, file);
                             reply.opened(0, 0);
-                        } else {
+                        }
+                        OpenMode::Read => {
                             info!("read file: {}", n.name.as_ref().unwrap_or(&"".to_string()));
                             if let Ok(file) = inner.client.open_file_read(n).await {
                                 inner.read_handles.lock().await.insert(ino, file);
@@ -192,7 +258,8 @@ impl Filesystem for DiscFs {
                                 reply.error(EUNKNOWN);
                             }
                         }
-                    }
+                        OpenMode::ReadWrite => reply.error(EPERM),
+                    },
                     None => reply.error(ENOENT),
                 },
                 Err(_) => reply.error(EUNKNOWN),
